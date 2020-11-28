@@ -111,15 +111,18 @@ def run(config):
                                         ep_i + 1 + config.n_rollout_threads,
                                         config.n_episodes))
         obs = env.reset()
+        torch_H = [[None] for _ in range(obs.shape[1])]
+        import ipdb
+        ipdb.set_trace()
         model.prep_rollouts(device='cpu')
 
         for et_i in range(config.episode_length):
             # rearrange observations to be per agent, and convert to torch Variable
             torch_obs = [Variable(torch.Tensor(np.vstack(obs[:, i])),
-                                  requires_grad=False)
+                                  requires_grad=False).unsqueeze(1)
                          for i in range(model.nagents)]
             # get actions as torch Variables
-            torch_agent_actions = model.step(torch_obs, explore=True)
+            torch_agent_actions, torch_H = model.step(torch_obs, H=torch_H, explore=True)
             # convert actions to numpy arrays
             agent_actions = [ac.data.numpy() for ac in torch_agent_actions]
             # rearrange actions to be per environment
@@ -157,7 +160,6 @@ def run(config):
     env.close()
     logger.export_scalars_to_json(str(log_dir / 'summary.json'))
     logger.close()
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

@@ -23,11 +23,12 @@ class BasePolicy(nn.Module):
         else:
             self.in_fn = lambda x: x
         self.fc1 = nn.Linear(input_dim + onehot_dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
-        self.fc3 = nn.Linear(hidden_dim, out_dim)
+        self.lstm = nn.LSTM(hidden_dim, hidden_size=hidden_dim, num_layers=1, batch_first=True)
+        # self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, out_dim)
         self.nonlin = nonlin
 
-    def forward(self, X):
+    def forward(self, X, H):
         """
         Inputs:
             X (PyTorch Matrix): Batch of observations (optionally a tuple that
@@ -42,9 +43,10 @@ class BasePolicy(nn.Module):
         if onehot is not None:
             inp = torch.cat((onehot, inp), dim=1)
         h1 = self.nonlin(self.fc1(inp))
-        h2 = self.nonlin(self.fc2(h1))
-        out = self.fc3(h2)
-        return out
+        h2, H = self.lstm(h1, H)
+        #h2 = self.nonlin(self.fc2(h1))
+        out = self.fc2(h2)
+        return out, H
 
 
 class DiscretePolicy(BasePolicy):
@@ -54,10 +56,11 @@ class DiscretePolicy(BasePolicy):
     def __init__(self, *args, **kwargs):
         super(DiscretePolicy, self).__init__(*args, **kwargs)
 
-    def forward(self, obs, sample=True, return_all_probs=False,
+    def forward(self, obs, H=None, sample=True, return_all_probs=False,
                 return_log_pi=False, regularize=False,
                 return_entropy=False):
-        out = super(DiscretePolicy, self).forward(obs)
+        out, H = super(DiscretePolicy, self).forward(obs, H)
+        out = out.view(-1, out.shape[-1])
         probs = F.softmax(out, dim=1)
         on_gpu = next(self.parameters()).is_cuda
         if sample:
@@ -77,5 +80,5 @@ class DiscretePolicy(BasePolicy):
         if return_entropy:
             rets.append(-(log_probs * probs).sum(1).mean())
         if len(rets) == 1:
-            return rets[0]
-        return rets
+            return rets[0], H
+        return rets, H

@@ -67,7 +67,7 @@ class AttentionSAC(object):
     def target_policies(self):
         return [a.target_policy for a in self.agents]
 
-    def step(self, observations, explore=False):
+    def step(self, observations, H=None, explore=False):
         """
         Take a step forward in environment with all agents
         Inputs:
@@ -75,8 +75,12 @@ class AttentionSAC(object):
         Outputs:
             actions: List of actions for each agent
         """
-        return [a.step(obs, explore=explore) for a, obs in zip(self.agents,
-                                                               observations)]
+
+        a_and_h = [a.step(obs, H=h, explore=explore) for a, obs, h in zip(self.agents,
+                                                               observations, H)]
+        a, h = list(zip(*a_and_h))
+
+        return a, h
 
     def update_critic(self, sample, soft=True, logger=None, **kwargs):
         """

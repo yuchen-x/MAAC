@@ -26,7 +26,7 @@ class AttentionAgent(object):
         hard_update(self.target_policy, self.policy)
         self.policy_optimizer = Adam(self.policy.parameters(), lr=lr)
 
-    def step(self, obs, explore=False):
+    def step(self, obs, H=None, explore=False):
         """
         Take a step forward in environment for a minibatch of observations
         Inputs:
@@ -35,7 +35,7 @@ class AttentionAgent(object):
         Outputs:
             action (PyTorch Variable): Actions for this agent
         """
-        return self.policy(obs, sample=explore)
+        return self.policy(obs, H=None, sample=explore)
 
     def get_params(self):
         return {'policy': self.policy.state_dict(),
