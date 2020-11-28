@@ -2,22 +2,64 @@ import argparse
 import torch
 import os
 import numpy as np
+import random
+
 from gym.spaces import Box, Discrete
 from pathlib import Path
 from torch.autograd import Variable
 from tensorboardX import SummaryWriter
-from utils.make_env import make_env
 from utils.buffer import ReplayBuffer
 from utils.env_wrappers import SubprocVecEnv, DummyVecEnv
 from algorithms.attention_sac import AttentionSAC
 
+from marl_envs.my_env.capture_target import CaptureTarget as CT
+from marl_envs.my_env.small_box_pushing import SmallBoxPushing as SBP
+from marl_envs.particle_envs.make_env import make_env
 
-def make_parallel_env(env_id, n_rollout_threads, seed):
+
+def make_parallel_env(config):
+    env_id = config.env_id
+    n_rollout_threads = config.n_rollout_threads
+    seed = config.seed
+
+    if config.env_id.startswith('CT'):
+        env_args = {'terminate_step': config.episode_length,
+                     'n_target': config.n_target,
+                     'n_agent': config.n_agent}
+    elif config.env_id.startswith('BP') or config.env_id.startswith('SBP'):
+        env_args = {'terminate_step': config.episode_length,
+                    'random_init': config.random_init,
+                    'small_box_only': config.small_box_only,
+                    'terminal_reward_only': config.terminal_reward_only,
+                    'big_box_reward': config.big_box_reward,
+                    'small_box_reward': config.small_box_reward,
+                    'n_agent': config.n_agent}
+    else:
+        env_args = {'max_epi_steps': config.episode_length,
+                    'prey_accel': config.n_target,
+                    'prey_max_v': config.prey_max_v,
+                    'obs_r': config.obs_r,
+                    'obs_resolution': config.obs_resolution,
+                    'flick_p': config.flick_p,
+                    'enable_boundary': config.enable_boundary,
+                    'benchmark': config.benchmark,
+                    'discrete_mul': config.discrete_mul,
+                    'config_name': config.config_name}
+
     def get_env_fn(rank):
         def init_env():
-            env = make_env(env_id, discrete_action=True)
-            env.seed(seed + rank * 1000)
-            np.random.seed(seed + rank * 1000)
+            if env_id.startswith('CT'):
+                env = CT(grid_dim=tuple(config.grid_dim), **env_args)
+            elif env_id.startswith('SBP'):
+                env = SBP(tuple(config.grid_dim), **env_args)
+            else:
+                env = make_env(env_id, 
+                               discrete_action=True, 
+                               discrete_action_input=True, 
+                               **env_args)
+                env.seed(seed + rank)
+            np.random.seed(seed + rank)
+            random.seed(seed + rank)
             return env
         return init_env
     if n_rollout_threads == 1:
@@ -37,15 +79,19 @@ def run(config):
             run_num = 1
         else:
             run_num = max(exst_run_nums) + 1
+
     curr_run = 'run%i' % run_num
     run_dir = model_dir / curr_run
     log_dir = run_dir / 'logs'
     os.makedirs(log_dir)
     logger = SummaryWriter(str(log_dir))
 
-    torch.manual_seed(run_num)
-    np.random.seed(run_num)
-    env = make_parallel_env(config.env_id, config.n_rollout_threads, run_num)
+    torch.manual_seed(config.seed)
+    np.random.seed(config.seed)
+    random.seed(config.seed)
+
+    env = make_parallel_env(config)
+
     model = AttentionSAC.init_from_env(env,
                                        tau=config.tau,
                                        pi_lr=config.pi_lr,
@@ -78,7 +124,7 @@ def run(config):
             agent_actions = [ac.data.numpy() for ac in torch_agent_actions]
             # rearrange actions to be per environment
             actions = [[ac[i] for ac in agent_actions] for i in range(config.n_rollout_threads)]
-            next_obs, rewards, dones, infos = env.step(actions)
+            next_obs, rewards, dones, _  = env.step(actions)
             replay_buffer.push(obs, agent_actions, rewards, next_obs, dones)
             obs = next_obs
             t += config.n_rollout_threads
@@ -119,26 +165,46 @@ if __name__ == '__main__':
     parser.add_argument("model_name",
                         help="Name of directory to store " +
                              "model/training contents")
-    parser.add_argument("--n_rollout_threads", default=12, type=int)
+    parser.add_argument("--n_rollout_threads", default=2, type=int)
     parser.add_argument("--buffer_length", default=int(1e6), type=int)
-    parser.add_argument("--n_episodes", default=50000, type=int)
+    parser.add_argument("--n_episodes", default=100000, type=int)
     parser.add_argument("--episode_length", default=25, type=int)
     parser.add_argument("--steps_per_update", default=100, type=int)
-    parser.add_argument("--num_updates", default=4, type=int,
+    parser.add_argument("--num_updates", default=1, type=int,
                         help="Number of updates per update cycle")
     parser.add_argument("--batch_size",
                         default=1024, type=int,
                         help="Batch size for training")
     parser.add_argument("--save_interval", default=1000, type=int)
-    parser.add_argument("--pol_hidden_dim", default=128, type=int)
-    parser.add_argument("--critic_hidden_dim", default=128, type=int)
+    parser.add_argument("--pol_hidden_dim", default=64, type=int)
+    parser.add_argument("--critic_hidden_dim", default=64, type=int)
     parser.add_argument("--attend_heads", default=4, type=int)
     parser.add_argument("--pi_lr", default=0.001, type=float)
     parser.add_argument("--q_lr", default=0.001, type=float)
     parser.add_argument("--tau", default=0.001, type=float)
-    parser.add_argument("--gamma", default=0.99, type=float)
+    parser.add_argument("--gamma", default=0.95, type=float)
     parser.add_argument("--reward_scale", default=100., type=float)
     parser.add_argument("--use_gpu", action='store_true')
+    parser.add_argument("--seed", default=0, type=int)
+    # env args
+    parser.add_argument('--grid_dim', nargs=2, default=[4,4], type=int)
+    parser.add_argument("--n_target", default=1, type=int)
+    parser.add_argument("--n_agent", default=2, type=int)
+    parser.add_argument("--small_box_only", action='store_true')
+    parser.add_argument("--terminal_reward_only", action='store_true')
+    parser.add_argument("--random_init", action='store_true')
+    parser.add_argument("--small_box_reward", default=100.0, type=float)
+    parser.add_argument("--big_box_reward", default=100.0, type=float)
+    # particle envs args
+    parser.add_argument("--prey_accel", default=4.0, type=float)
+    parser.add_argument("--prey_max_v", default=1.3, type=float)
+    parser.add_argument("--flick_p", default=0.0, type=float)
+    parser.add_argument("--obs_r", default=2.0, type=float)
+    parser.add_argument("--enable_boundary", action='store_true')
+    parser.add_argument("--discrete_mul", default=1, type=int)
+    parser.add_argument("--config_name", default="antipodal", type=str)
+    parser.add_argument("--benchmark", action='store_true')
+    parser.add_argument("--obs_resolution", default=8, type=int)
 
     config = parser.parse_args()
 

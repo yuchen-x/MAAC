@@ -12,7 +12,9 @@ def worker(remote, parent_remote, env_fn_wrapper):
     while True:
         cmd, data = remote.recv()
         if cmd == 'step':
-            ob, reward, done, info = env.step(data)
+            actions = [a.argmax() for a in data]
+            a, ob, reward, done, valid, info = env.step(actions)
+            #ob, reward, done, info = env.step(data)
             if all(done):
                 ob = env.reset()
             remote.send((ob, reward, done, info))
@@ -112,6 +114,7 @@ class DummyVecEnv(VecEnv):
 
     def step_wait(self):
         results = [env.step(a) for (a,env) in zip(self.actions, self.envs)]
+        results = [[results[0][1], results[0][2], results[0][3], results[0][5]]]
         obs, rews, dones, infos = map(np.array, zip(*results))
         self.ts += 1
         for (i, done) in enumerate(dones):

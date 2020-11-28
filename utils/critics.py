@@ -11,7 +11,7 @@ class AttentionCritic(nn.Module):
     observation and action, and can also attend over the other agents' encoded
     observations and actions.
     """
-    def __init__(self, sa_sizes, hidden_dim=32, norm_in=True, attend_heads=1):
+    def __init__(self, sa_sizes, hidden_dim=64, norm_in=False, attend_heads=4):
         """
         Inputs:
             sa_sizes (list of (int, int)): Size of state and action spaces per
@@ -142,8 +142,12 @@ class AttentionCritic(nn.Module):
         # calculate Q per agent
         all_rets = []
         for i, a_i in enumerate(agents):
-            head_entropies = [(-((probs + 1e-8).log() * probs).squeeze().sum(1)
-                               .mean()) for probs in all_attend_probs[i]]
+            if agents.stop > 2:
+                head_entropies = [(-((probs + 1e-8).log() * probs).squeeze().sum(1)
+                                   .mean()) for probs in all_attend_probs[i]]
+            else:
+                head_entropies = [(-((probs + 1e-8).log() * probs).squeeze().sum()
+                                   .mean()) for probs in all_attend_probs[i]]
             agent_rets = []
             critic_in = torch.cat((s_encodings[i], *other_all_values[i]), dim=1)
             all_q = self.critics[a_i](critic_in)
