@@ -8,7 +8,7 @@ from gym.spaces import Box, Discrete
 from pathlib import Path
 from torch.autograd import Variable
 from tensorboardX import SummaryWriter
-from utils.buffer import ReplayBuffer
+from utils.buffer import ReplayBuffer, ReplayBufferEpi
 from utils.env_wrappers import SubprocVecEnv, DummyVecEnv
 from algorithms.attention_sac import AttentionSAC
 
@@ -101,10 +101,12 @@ def run(config):
                                        critic_hidden_dim=config.critic_hidden_dim,
                                        attend_heads=config.attend_heads,
                                        reward_scale=config.reward_scale)
-    replay_buffer = ReplayBuffer(config.buffer_length, model.nagents,
-                                 [obsp.shape[0] for obsp in env.observation_space],
-                                 [acsp.shape[0] if isinstance(acsp, Box) else acsp.n
-                                  for acsp in env.action_space])
+    replay_buffer = ReplayBufferEpi(config.buffer_length, 
+                                    config.episode_length,
+                                    model.nagents,
+                                    [obsp.shape[0] for obsp in env.observation_space],
+                                    [acsp.shape[0] if isinstance(acsp, Box) else acsp.n
+                                    for acsp in env.action_space])
     t = 0
     for ep_i in range(0, config.n_episodes, config.n_rollout_threads):
         print("Episodes %i-%i of %i" % (ep_i + 1,
@@ -112,8 +114,6 @@ def run(config):
                                         config.n_episodes))
         obs = env.reset()
         torch_H = [[None] for _ in range(obs.shape[1])]
-        import ipdb
-        ipdb.set_trace()
         model.prep_rollouts(device='cpu')
 
         for et_i in range(config.episode_length):
@@ -128,6 +128,8 @@ def run(config):
             # rearrange actions to be per environment
             actions = [[ac[i] for ac in agent_actions] for i in range(config.n_rollout_threads)]
             next_obs, rewards, dones, _  = env.step(actions)
+            import ipdb
+            ipdb.set_trace()
             replay_buffer.push(obs, agent_actions, rewards, next_obs, dones)
             obs = next_obs
             t += config.n_rollout_threads
@@ -144,11 +146,11 @@ def run(config):
                     model.update_policies(sample, logger=logger)
                     model.update_all_targets()
                 model.prep_rollouts(device='cpu')
-        ep_rews = replay_buffer.get_average_rewards(
-            config.episode_length * config.n_rollout_threads)
-        for a_i, a_ep_rew in enumerate(ep_rews):
-            logger.add_scalar('agent%i/mean_episode_rewards' % a_i,
-                              a_ep_rew * config.episode_length, ep_i)
+        # ep_rews = replay_buffer.get_average_rewards(
+        #     config.episode_length * config.n_rollout_threads)
+        # for a_i, a_ep_rew in enumerate(ep_rews):
+        #     logger.add_scalar('agent%i/mean_episode_rewards' % a_i,
+        #                       a_ep_rew * config.episode_length, ep_i)
 
         if ep_i % config.save_interval < config.n_rollout_threads:
             model.prep_rollouts(device='cpu')
@@ -168,14 +170,14 @@ if __name__ == '__main__':
                         help="Name of directory to store " +
                              "model/training contents")
     parser.add_argument("--n_rollout_threads", default=2, type=int)
-    parser.add_argument("--buffer_length", default=int(1e6), type=int)
+    parser.add_argument("--buffer_length", default=int(4e4), type=int)
     parser.add_argument("--n_episodes", default=100000, type=int)
     parser.add_argument("--episode_length", default=25, type=int)
     parser.add_argument("--steps_per_update", default=100, type=int)
     parser.add_argument("--num_updates", default=1, type=int,
                         help="Number of updates per update cycle")
     parser.add_argument("--batch_size",
-                        default=1024, type=int,
+                        default=32, type=int,
                         help="Batch size for training")
     parser.add_argument("--save_interval", default=1000, type=int)
     parser.add_argument("--pol_hidden_dim", default=64, type=int)
