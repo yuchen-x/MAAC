@@ -132,8 +132,8 @@ class ReplayBufferEpi(object):
         return self.filled_i
 
     def push(self, observations, actions, rewards, next_observations, dones):
-        nentries = observations.shape[0]  # handle multiple parallel environments
-        if self.curr_i + nentries > self.max_steps:
+        self.nentries = observations.shape[0]  # handle multiple parallel environments
+        if self.curr_i + self.nentries > self.max_steps:
             rollover = self.max_steps - self.curr_i # num of indices to roll over
             for agent_i in range(self.num_agents):
                 self.obs_buffs[agent_i] = np.roll(self.obs_buffs[agent_i],
@@ -149,30 +149,37 @@ class ReplayBufferEpi(object):
             self.curr_i = 0
             self.filled_i = self.max_steps
         for agent_i in range(self.num_agents):
-            self.obs_buffs[agent_i][self.curr_i:self.curr_i + nentries][:,self.curr_exp_i] \
+            self.obs_buffs[agent_i][self.curr_i:self.curr_i + self.nentries][:,self.curr_exp_i] \
                     = np.vstack(observations[:, agent_i])
             # actions are already batched by agent, so they are indexed differently
-            self.ac_buffs[agent_i][self.curr_i:self.curr_i + nentries][:,self.curr_exp_i] \
+            self.ac_buffs[agent_i][self.curr_i:self.curr_i + self.nentries][:,self.curr_exp_i] \
                     = actions[agent_i]
-            self.rew_buffs[agent_i][self.curr_i:self.curr_i + nentries][:,self.curr_exp_i] \
+            self.rew_buffs[agent_i][self.curr_i:self.curr_i + self.nentries][:,self.curr_exp_i] \
                     = rewards[:, agent_i]
-            self.next_obs_buffs[agent_i][self.curr_i:self.curr_i + nentries][:,self.curr_exp_i] \
+            self.next_obs_buffs[agent_i][self.curr_i:self.curr_i + self.nentries][:,self.curr_exp_i] \
                     = np.vstack(next_observations[:, agent_i])
-            self.done_buffs[agent_i][self.curr_i:self.curr_i + nentries][:,self.curr_exp_i] \
+            self.done_buffs[agent_i][self.curr_i:self.curr_i + self.nentries][:,self.curr_exp_i] \
                     = dones[:, agent_i]
         # move to next step for all epi
         self.curr_exp_i += 1
         if self.curr_exp_i >= self.epi_len:
             self.curr_exp_i = 0
-            self.curr_i += nentries
+            self.curr_i += self.nentries
             if self.filled_i < self.max_steps:
-                self.filled_i += nentries
+                self.filled_i += self.nentries
             if self.curr_i == self.max_steps:
                 self.curr_i = 0
 
     def sample(self, N, to_gpu=False, norm_rews=False):
-        inds = np.random.choice(np.arange(self.filled_i), size=N,
-                                replace=True)
+        if self.filled_i < self.max_steps:
+            inds = np.random.choice(np.arange(self.filled_i), size=N,
+                                    replace=True)
+        else:
+            inds_0 = np.arange(0,self.curr_i)
+            inds_1 = np.arange(self.curr_i+self.nentries, self.filled_i)
+            inds = np.append(inds_0, inds_1)
+            inds = np.random.choice(inds, size=N,
+                                    replace=True)
         if to_gpu:
             cast = lambda x: Variable(Tensor(x), requires_grad=False).cuda()
         else:

@@ -17,6 +17,7 @@ class AttentionSAC(object):
                  reward_scale=10.,
                  pol_hidden_dim=128,
                  critic_hidden_dim=128, attend_heads=4,
+                 grad_clip_norm=1.0,
                  **kwargs):
         """
         Inputs:
@@ -58,6 +59,7 @@ class AttentionSAC(object):
         self.trgt_pol_dev = 'cpu'  # device for target policies
         self.trgt_critic_dev = 'cpu'  # device for target critics
         self.niter = 0
+        self.grad_clip_norm = grad_clip_norm
 
     @property
     def policies(self):
@@ -91,7 +93,7 @@ class AttentionSAC(object):
         next_acs = []
         next_log_pis = []
         for pi, ob in zip(self.target_policies, next_obs):
-            curr_next_ac, curr_next_log_pi = pi(ob, return_log_pi=True)
+            (curr_next_ac, curr_next_log_pi), _ = pi(ob, return_log_pi=True)
             next_acs.append(curr_next_ac)
             next_log_pis.append(curr_next_log_pi)
         trgt_critic_in = list(zip(next_obs, next_acs))
@@ -130,7 +132,7 @@ class AttentionSAC(object):
         all_pol_regs = []
 
         for a_i, pi, ob in zip(range(self.nagents), self.policies, obs):
-            curr_ac, probs, log_pi, pol_regs, ent = pi(
+            (curr_ac, probs, log_pi, pol_regs, ent), _ = pi(
                 ob, return_all_probs=True, return_log_pi=True,
                 regularize=True, return_entropy=True)
             logger.add_scalar('agent%i/policy_entropy' % a_i, ent,
@@ -160,7 +162,7 @@ class AttentionSAC(object):
             enable_gradients(self.critic)
 
             grad_norm = torch.nn.utils.clip_grad_norm(
-                curr_agent.policy.parameters(), 0.5)
+                curr_agent.policy.parameters(), self.grad_clip_norm)
             curr_agent.policy_optimizer.step()
             curr_agent.policy_optimizer.zero_grad()
 

@@ -103,9 +103,10 @@ class AttentionCritic(nn.Module):
         """
         if agents is None:
             agents = range(len(self.critic_encoders))
-        states = [s for s, a in inps]
-        actions = [a for s, a in inps]
-        inps = [torch.cat((s, a), dim=1) for s, a in inps]
+        states = [s.view(-1,s.shape[-1]) for s, a in inps]
+        actions = [a.view(-1,a.shape[-1]) for s, a in inps]
+        inps = [torch.cat((s.view(-1,s.shape[-1]), 
+                           a.view(-1,a.shape[-1])), dim=-1) for s, a in inps]
         # extract state-action encoding for each agent
         sa_encodings = [encoder(inp) for encoder, inp in zip(self.critic_encoders, inps)]
         # extract state encoding for each agent that we're returning Q for

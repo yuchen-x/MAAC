@@ -100,7 +100,8 @@ def run(config):
                                        pol_hidden_dim=config.pol_hidden_dim,
                                        critic_hidden_dim=config.critic_hidden_dim,
                                        attend_heads=config.attend_heads,
-                                       reward_scale=config.reward_scale)
+                                       reward_scale=config.reward_scale,
+                                       grad_clip_norm=config.grad_clip_norm)
     replay_buffer = ReplayBufferEpi(config.buffer_length, 
                                     config.episode_length,
                                     model.nagents,
@@ -109,9 +110,9 @@ def run(config):
                                     for acsp in env.action_space])
     t = 0
     for ep_i in range(0, config.n_episodes, config.n_rollout_threads):
-        print("Episodes %i-%i of %i" % (ep_i + 1,
-                                        ep_i + 1 + config.n_rollout_threads,
-                                        config.n_episodes))
+        # print("Episodes %i-%i of %i" % (ep_i + 1,
+        #                                 ep_i + 1 + config.n_rollout_threads,
+        #                                 config.n_episodes))
         obs = env.reset()
         torch_H = [[None] for _ in range(obs.shape[1])]
         model.prep_rollouts(device='cpu')
@@ -128,8 +129,6 @@ def run(config):
             # rearrange actions to be per environment
             actions = [[ac[i] for ac in agent_actions] for i in range(config.n_rollout_threads)]
             next_obs, rewards, dones, _  = env.step(actions)
-            import ipdb
-            ipdb.set_trace()
             replay_buffer.push(obs, agent_actions, rewards, next_obs, dones)
             obs = next_obs
             t += config.n_rollout_threads
@@ -152,16 +151,16 @@ def run(config):
         #     logger.add_scalar('agent%i/mean_episode_rewards' % a_i,
         #                       a_ep_rew * config.episode_length, ep_i)
 
-        if ep_i % config.save_interval < config.n_rollout_threads:
-            model.prep_rollouts(device='cpu')
-            os.makedirs(run_dir / 'incremental', exist_ok=True)
-            model.save(run_dir / 'incremental' / ('model_ep%i.pt' % (ep_i + 1)))
-            model.save(run_dir / 'model.pt')
+        # if ep_i % config.save_interval < config.n_rollout_threads:
+        #     model.prep_rollouts(device='cpu')
+        #     os.makedirs(run_dir / 'incremental', exist_ok=True)
+        #     model.save(run_dir / 'incremental' / ('model_ep%i.pt' % (ep_i + 1)))
+        #     model.save(run_dir / 'model.pt')
 
-    model.save(run_dir / 'model.pt')
+    # model.save(run_dir / 'model.pt')
     env.close()
-    logger.export_scalars_to_json(str(log_dir / 'summary.json'))
-    logger.close()
+    # logger.export_scalars_to_json(str(log_dir / 'summary.json'))
+    # logger.close()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -190,6 +189,7 @@ if __name__ == '__main__':
     parser.add_argument("--reward_scale", default=100., type=float)
     parser.add_argument("--use_gpu", action='store_true')
     parser.add_argument("--seed", default=0, type=int)
+    parser.add_argument("--grad_clip_norm", default=1.0, type=float)
     # env args
     parser.add_argument('--grid_dim', nargs=2, default=[4,4], type=int)
     parser.add_argument("--n_target", default=1, type=int)
