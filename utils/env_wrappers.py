@@ -95,7 +95,6 @@ class SubprocVecEnv(VecEnv):
             p.join()
         self.closed = True
 
-
 class DummyVecEnv(VecEnv):
     def __init__(self, env_fns):
         self.envs = [fn() for fn in env_fns]
@@ -110,7 +109,7 @@ class DummyVecEnv(VecEnv):
         self.actions = None
 
     def step_async(self, actions):
-        self.actions = actions
+        self.actions = [[a.argmax() for a in actions[0]]]
 
     def step_wait(self):
         results = [env.step(a) for (a,env) in zip(self.actions, self.envs)]
