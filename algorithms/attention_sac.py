@@ -1,5 +1,7 @@
 import torch
 import torch.nn.functional as F
+import numpy as np
+import copy
 from torch.optim import Adam
 from utils.misc import soft_update, hard_update, enable_gradients, disable_gradients
 from utils.agents import AttentionAgent
@@ -124,7 +126,7 @@ class AttentionSAC(object):
             logger.add_scalar('grad_norms/q', grad_norm, self.niter)
         self.niter += 1
 
-    def update_policies(self, sample, soft=True, logger=None, **kwargs):
+    def update_policies(self, sample, env_name, soft=True, logger=None, **kwargs):
         obs, acs, rews, next_obs, dones = sample
         samp_acs = []
         all_probs = []
@@ -151,7 +153,19 @@ class AttentionSAC(object):
             v = (all_q * probs).sum(dim=1, keepdim=True)
             pol_target = q - v
             if soft:
-                pol_loss = (log_pi * (log_pi / self.reward_scale - pol_target).detach()).mean()
+                valid = copy.deepcopy(dones[a_i])
+                indice = np.argmax(valid, axis=1) 
+                for row, col in enumerate(indice.tolist()):
+                    if col == 0:
+                        valid[row][:] = 1
+                    else:
+                        valid[row][0:col] = 1
+
+                if env_name in ['pomdp_simple_spread',
+                              'pomdp_advanced_spread']:
+                    assert (valid == 1).all(), "Error in valid matrix ... "
+
+                pol_loss = (valid.view(-1,1) * log_pi * (log_pi / self.reward_scale - pol_target).detach()).mean()
             else:
                 pol_loss = (log_pi * (-pol_target).detach()).mean()
             for reg in pol_regs:

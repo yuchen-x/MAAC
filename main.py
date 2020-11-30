@@ -158,7 +158,7 @@ def run(config):
                     sample = replay_buffer.sample(config.batch_size,
                                                   to_gpu=config.use_gpu)
                     model.update_critic(sample, logger=logger)
-                    model.update_policies(sample, logger=logger)
+                    model.update_policies(sample, config.env_id, logger=logger)
                     model.update_all_targets()
                 model.prep_rollouts(device='cpu')
 
@@ -179,6 +179,7 @@ def run(config):
 
     # model.save(run_dir / 'model.pt')
     save_test_data(config.run_idx, test_returns, config.save_dir)
+    save_ckpt(config.run_idx, model, config.save_dir)
     env.close()
     print("Finish entire training ... ", flush=True)
     # logger.export_scalars_to_json(str(log_dir / 'summary.json'))
@@ -204,6 +205,43 @@ def evaluate(env, model, gamma, episode_length, eval_num_epi=10):
 def save_test_data(run_idx, data, save_dir):
     with open("./performance/" + save_dir + "/test/test_perform" + str(run_idx) + ".pickle", 'wb') as handle:
         pickle.dump(data, handle)
+
+def save_ckpt(run_idx, model, save_dir, max_save=2):
+
+    PATH = "./performance/" + save_dir + "/ckpt/" + str(run_idx) + "_critic_" + "{}.tar"
+    for n in list(range(max_save-1, 0, -1)):
+        os.system('cp -rf ' + PATH.format(n) + ' ' + PATH.format(n+1) )
+    PATH = PATH.format(1)
+
+    torch.save({'critic_net_state_dict': model.critic.state_dict(),
+                'critic_tgt_net_state_dict': model.target_critic.state_dict(),
+                'critic_optimizer_state_dict': model.critic_optimizer.state_dict()}, 
+               PATH)
+
+    for idx, agent in enumerate(model.agents):
+        PATH = "./performance/" + save_dir + "/ckpt/" + str(run_idx) + "_agent_" + str(idx) + "{}.tar"
+
+        for n in list(range(max_save-1, 0, -1)):
+            os.system('cp -rf ' + PATH.format(n) + ' ' + PATH.format(n+1) )
+        PATH = PATH.format(1)
+        torch.save({'actor_net_state_dict': agent.policy.state_dict(),
+                    'actor_tgt_net_state_dict': agent.target_policy.state_dict(),
+                    'actor_optimizer_state_dict': agent.policy_optimizer.state_dict()},
+                   PATH)
+
+def load_ckpt(run_idx, model, save_dir):
+    PATH = "./performance/" + save_dir + "/ckpt/" + str(run_idx) + "_critic_" + "1.tar"
+    ckpt = torch.load(PATH)
+    model.critic.load_state_dict(ckpt['critic_net_state_dict'])
+    model.target_critic.load_state_dict(ckpt['critic_tgt_net_state_dict'])
+    model.critic_optimizer.load_state_dict(ckpt['critic_optimizer_state_dict'])
+
+    for idx, agent in enumerate(model.agents):
+        PATH = "./performance/" + save_dir + "/ckpt/" + str(run_idx) + "_agent_" + str(idx) + "1.tar"
+        ckpt = torch.load(PATH)
+        agent.policy.load_state_dict(ckpt['actor_net_state_dict'])
+        agent.target_policy.load_state_dict(ckpt['actor_tgt_net_state_dict'])
+        agent.policy_optimizer.load_state_dict(ckpt['actor_optimizer_state_dict'])
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
