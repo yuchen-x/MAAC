@@ -186,6 +186,9 @@ def run(config):
     # logger.close()
 
 def evaluate(env, model, gamma, episode_length, eval_num_epi=10):
+    for agent in model.agents:
+        agent.policy.eval()
+
     R = 0.0
     for ep_i in range(eval_num_epi):
         obs = env.reset()
@@ -200,6 +203,10 @@ def evaluate(env, model, gamma, episode_length, eval_num_epi=10):
             actions = [[ac[i] for ac in agent_actions] for i in range(1)]
             next_obs, rewards, dones, _  = env.step(actions)
             R += gamma**et_i*np.sum(rewards)
+
+    for agent in model.agents:
+        agent.policy.train()
+
     return R/eval_num_epi
 
 def save_test_data(run_idx, data, save_dir):
@@ -250,19 +257,19 @@ if __name__ == '__main__':
                         help="Name of directory to store " +
                              "model/training contents")
     parser.add_argument("--n_rollout_threads", default=2, type=int)
-    parser.add_argument("--buffer_length", default=int(4e4), type=int)
+    parser.add_argument("--buffer_length", default=int(1e6), type=int)
     parser.add_argument("--n_episodes", default=100000, type=int)
     parser.add_argument("--episode_length", default=25, type=int)
     parser.add_argument("--steps_per_update", default=100, type=int)
     parser.add_argument("--num_updates", default=4, type=int,
                         help="Number of updates per update cycle")
     parser.add_argument("--batch_size",
-                        default=64, type=int,
+                        default=1024, type=int,
                         help="Batch size for training")
     parser.add_argument("--save_interval", default=1000, type=int)
     parser.add_argument("--pol_hidden_dim", default=64, type=int)
     parser.add_argument("--critic_hidden_dim", default=64, type=int)
-    parser.add_argument("--attend_heads", default=2, type=int)
+    parser.add_argument("--attend_heads", default=4, type=int)
     parser.add_argument("--pi_lr", default=0.001, type=float)
     parser.add_argument("--q_lr", default=0.001, type=float)
     parser.add_argument("--tau", default=0.001, type=float)
@@ -270,11 +277,11 @@ if __name__ == '__main__':
     parser.add_argument("--reward_scale", default=100., type=float)
     parser.add_argument("--use_gpu", action='store_true')
     parser.add_argument("--seed", default=0, type=int)
-    parser.add_argument("--grad_clip_norm", default=1.0, type=float)
+    parser.add_argument("--grad_clip_norm", default=0.5, type=float)
     # env args
     parser.add_argument('--grid_dim', nargs=2, default=[4,4], type=int)
     parser.add_argument("--n_target", default=1, type=int)
-    parser.add_argument("--n_agent", default=3, type=int)
+    parser.add_argument("--n_agent", default=2, type=int)
     parser.add_argument("--small_box_only", action='store_true')
     parser.add_argument("--terminal_reward_only", action='store_true')
     parser.add_argument("--random_init", action='store_true')
