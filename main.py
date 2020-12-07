@@ -160,6 +160,7 @@ def run(config):
 
         if ep_i % config.save_rate == 0:
             save_test_data(config.run_idx, test_returns, config.save_dir)
+            save_ckpt(config.run_idx, model, config.save_dir)
 
         # ep_rews = replay_buffer.get_average_rewards(
         #     config.episode_length * config.n_rollout_threads)
@@ -246,13 +247,14 @@ def load_ckpt(run_idx, model, save_dir):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("env_id", help="Name of environment")
-    parser.add_argument("model_name",
+    parser.add_argument("--env_id", default='simple_collect_treasure', type=str,
+                        help="Name of environment")
+    parser.add_argument("--model_name", default='test', type=str,
                         help="Name of directory to store " +
                              "model/training contents")
-    parser.add_argument("--n_rollout_threads", default=2, type=int)
+    parser.add_argument("--n_rollout_threads", default=4, type=int)
     parser.add_argument("--buffer_length", default=int(1e6), type=int)
-    parser.add_argument("--n_episodes", default=100000, type=int)
+    parser.add_argument("--n_episodes", default=50000, type=int)
     parser.add_argument("--episode_length", default=25, type=int)
     parser.add_argument("--steps_per_update", default=100, type=int)
     parser.add_argument("--num_updates", default=4, type=int,
@@ -261,13 +263,13 @@ if __name__ == '__main__':
                         default=1024, type=int,
                         help="Batch size for training")
     parser.add_argument("--save_interval", default=1000, type=int)
-    parser.add_argument("--pol_hidden_dim", default=64, type=int)
-    parser.add_argument("--critic_hidden_dim", default=64, type=int)
+    parser.add_argument("--pol_hidden_dim", default=128, type=int)
+    parser.add_argument("--critic_hidden_dim", default=128, type=int)
     parser.add_argument("--attend_heads", default=4, type=int)
     parser.add_argument("--pi_lr", default=0.001, type=float)
     parser.add_argument("--q_lr", default=0.001, type=float)
-    parser.add_argument("--tau", default=0.001, type=float)
-    parser.add_argument("--gamma", default=0.95, type=float)
+    parser.add_argument("--tau", default=0.0005, type=float)
+    parser.add_argument("--gamma", default=0.99, type=float)
     parser.add_argument("--reward_scale", default=100., type=float)
     parser.add_argument("--use_gpu", action='store_true')
     parser.add_argument("--seed", default=0, type=int)
