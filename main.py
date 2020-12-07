@@ -2,6 +2,8 @@ import argparse
 import torch
 import os
 import numpy as np
+import random
+import pickle
 from gym.spaces import Box, Discrete
 from pathlib import Path
 from torch.autograd import Variable
@@ -45,7 +47,13 @@ def run(config):
 
     torch.manual_seed(run_num)
     np.random.seed(run_num)
+    random.seed(run_num)
+
     env = make_parallel_env(config.env_id, config.n_rollout_threads, run_num)
+
+    # create an env for testing
+    env_test = DummyVecEnv([make_env(config.env_id, discrete_action=True)])
+
     model = AttentionSAC.init_from_env(env,
                                        tau=config.tau,
                                        pi_lr=config.pi_lr,
@@ -60,10 +68,22 @@ def run(config):
                                  [acsp.shape[0] if isinstance(acsp, Box) else acsp.n
                                   for acsp in env.action_space])
     t = 0
+    test_returns=[]
     for ep_i in range(0, config.n_episodes, config.n_rollout_threads):
-        print("Episodes %i-%i of %i" % (ep_i + 1,
-                                        ep_i + 1 + config.n_rollout_threads,
-                                        config.n_episodes))
+
+        if ep_i % (config.eval_freq - (config.eval_freq % config.n_rollout_threads)) == 0:
+            test_return = evaluate(env_test, 
+                                   model, 
+                                   config.gamma, 
+                                   config.episode_length, 
+                                   eval_num_epi=config.eval_num_epi)
+            print(f"{[config.run_idx]} Finished: {ep_i}/{config.n_episodes} Evaluate learned policies with averaged returns {test_return/config.n_agent} ...", flush=True)
+            test_returns.append(test_return)
+
+        # print("Episodes %i-%i of %i" % (ep_i + 1,
+        #                                 ep_i + 1 + config.n_rollout_threads,
+        #                                 config.n_episodes))
+
         obs = env.reset()
         model.prep_rollouts(device='cpu')
 
@@ -95,6 +115,12 @@ def run(config):
                     model.update_policies(sample, logger=logger)
                     model.update_all_targets()
                 model.prep_rollouts(device='cpu')
+
+        if ep_i % config.save_rate == 0:
+            save_test_data(config.run_idx, test_returns, config.save_dir)
+            save_ckpt(config.run_idx, model, config.save_dir)
+
+
         ep_rews = replay_buffer.get_average_rewards(
             config.episode_length * config.n_rollout_threads)
         for a_i, a_ep_rew in enumerate(ep_rews):
@@ -108,10 +134,75 @@ def run(config):
             model.save(run_dir / 'model.pt')
 
     model.save(run_dir / 'model.pt')
+    save_test_data(config.run_idx, test_returns, config.save_dir)
+    save_ckpt(config.run_idx, model, config.save_dir)
     env.close()
+    env_test.close()
     logger.export_scalars_to_json(str(log_dir / 'summary.json'))
     logger.close()
 
+def evaluate(env, model, gamma, episode_length, eval_num_epi=10):
+    for agent in model.agents:
+        agent.policy.eval()
+    R = 0.0
+    for ep_i in range(eval_num_epi):
+        obs = env.reset()
+
+        for et_i in range(episode_length):
+            torch_obs = [Variable(torch.Tensor(np.vstack(obs[:, i])),
+                                  requires_grad=False)
+                         for i in range(model.nagents)]
+            torch_agent_actions = model.step(torch_obs, explore=True)
+            agent_actions = [ac.data.numpy() for ac in torch_agent_actions]
+            actions = [[ac[i] for ac in agent_actions] for i in range(1)]
+            next_obs, rewards, dones, _  = env.step(actions)
+            R += gamma**et_i*np.sum(rewards)
+
+    for agent in model.agents:
+        agent.policy.train()
+
+    return R/eval_num_epi
+
+def save_test_data(run_idx, data, save_dir):
+    with open("./performance/" + save_dir + "/test/test_perform" + str(run_idx) + ".pickle", 'wb') as handle:
+        pickle.dump(data, handle)
+
+def save_ckpt(run_idx, model, save_dir, max_save=2):
+
+    PATH = "./performance/" + save_dir + "/ckpt/" + str(run_idx) + "_critic_" + "{}.tar"
+    for n in list(range(max_save-1, 0, -1)):
+        os.system('cp -rf ' + PATH.format(n) + ' ' + PATH.format(n+1) )
+    PATH = PATH.format(1)
+
+    torch.save({'critic_net_state_dict': model.critic.state_dict(),
+                'critic_tgt_net_state_dict': model.target_critic.state_dict(),
+                'critic_optimizer_state_dict': model.critic_optimizer.state_dict()}, 
+               PATH)
+
+    for idx, agent in enumerate(model.agents):
+        PATH = "./performance/" + save_dir + "/ckpt/" + str(run_idx) + "_agent_" + str(idx) + "{}.tar"
+
+        for n in list(range(max_save-1, 0, -1)):
+            os.system('cp -rf ' + PATH.format(n) + ' ' + PATH.format(n+1) )
+        PATH = PATH.format(1)
+        torch.save({'actor_net_state_dict': agent.policy.state_dict(),
+                    'actor_tgt_net_state_dict': agent.target_policy.state_dict(),
+                    'actor_optimizer_state_dict': agent.policy_optimizer.state_dict()},
+                   PATH)
+
+def load_ckpt(run_idx, model, save_dir):
+    PATH = "./performance/" + save_dir + "/ckpt/" + str(run_idx) + "_critic_" + "1.tar"
+    ckpt = torch.load(PATH)
+    model.critic.load_state_dict(ckpt['critic_net_state_dict'])
+    model.target_critic.load_state_dict(ckpt['critic_tgt_net_state_dict'])
+    model.critic_optimizer.load_state_dict(ckpt['critic_optimizer_state_dict'])
+
+    for idx, agent in enumerate(model.agents):
+        PATH = "./performance/" + save_dir + "/ckpt/" + str(run_idx) + "_agent_" + str(idx) + "1.tar"
+        ckpt = torch.load(PATH)
+        agent.policy.load_state_dict(ckpt['actor_net_state_dict'])
+        agent.target_policy.load_state_dict(ckpt['actor_tgt_net_state_dict'])
+        agent.policy_optimizer.load_state_dict(ckpt['actor_optimizer_state_dict'])
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -140,6 +231,17 @@ if __name__ == '__main__':
     parser.add_argument("--reward_scale", default=100., type=float)
     parser.add_argument("--use_gpu", action='store_true')
 
+    # evaluation
+    parser.add_argument("--eval_freq", default=100, type=int)
+    parser.add_argument("--eval_num_epi", default=10, type=int)
+    parser.add_argument("--run_idx", default=0, type=int)
+    parser.add_argument("--save_dir", default='test', type=str)
+    parser.add_argument("--save_rate", default=1000, type=int)
+
     config = parser.parse_args()
+
+    # create the dirs to save results
+    os.makedirs("./performance/" + config.save_dir + "/test", exist_ok=True)
+    os.makedirs("./performance/" + config.save_dir + "/ckpt", exist_ok=True)
 
     run(config)
