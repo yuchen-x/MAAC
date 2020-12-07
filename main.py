@@ -27,6 +27,14 @@ def make_parallel_env(env_id, n_rollout_threads, seed):
     else:
         return SubprocVecEnv([get_env_fn(i) for i in range(n_rollout_threads)])
 
+def make_test_env(env_id):
+    def get_env_fn(rank):
+        def init_env():
+            env = make_env(env_id, discrete_action=True)
+            return env
+        return init_env
+    return DummyVecEnv([get_env_fn(0)])
+
 def run(config):
     model_dir = Path('./models') / config.env_id / config.model_name
     if not model_dir.exists():
@@ -52,7 +60,7 @@ def run(config):
     env = make_parallel_env(config.env_id, config.n_rollout_threads, run_num)
 
     # create an env for testing
-    env_test = DummyVecEnv([make_env(config.env_id, discrete_action=True)])
+    env_test = make_test_env(config.env_id)
 
     model = AttentionSAC.init_from_env(env,
                                        tau=config.tau,
@@ -119,7 +127,6 @@ def run(config):
         if ep_i % config.save_rate == 0:
             save_test_data(config.run_idx, test_returns, config.save_dir)
             save_ckpt(config.run_idx, model, config.save_dir)
-
 
         ep_rews = replay_buffer.get_average_rewards(
             config.episode_length * config.n_rollout_threads)
@@ -231,6 +238,7 @@ if __name__ == '__main__':
     parser.add_argument("--reward_scale", default=100., type=float)
     parser.add_argument("--use_gpu", action='store_true')
 
+    parser.add_argument("--n_agent", default=8, type=int)
     # evaluation
     parser.add_argument("--eval_freq", default=100, type=int)
     parser.add_argument("--eval_num_epi", default=10, type=int)
