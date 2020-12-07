@@ -161,8 +161,7 @@ class AttentionSAC(object):
                     else:
                         valid[row][0:col] = 1
 
-                if env_name in ['pomdp_simple_spread',
-                              'pomdp_advanced_spread']:
+                if env_name.startswith('pomdp') or env_name.startswith('simple'):
                     assert (valid == 1).all(), "Error in valid matrix ... "
 
                 pol_loss = (valid.view(-1,1) * log_pi * (log_pi / self.reward_scale - pol_target).detach()).mean()
