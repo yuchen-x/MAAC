@@ -163,6 +163,7 @@ def evaluate(env, model, gamma, episode_length, eval_num_epi=10):
             agent_actions = [ac.data.numpy() for ac in torch_agent_actions]
             actions = [[ac[i] for ac in agent_actions] for i in range(1)]
             next_obs, rewards, dones, _  = env.step(actions)
+            obs = next_obs
             R += gamma**et_i*np.sum(rewards)
 
     for agent in model.agents:
