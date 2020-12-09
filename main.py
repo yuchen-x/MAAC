@@ -206,8 +206,11 @@ def evaluate(env, model, gamma, episode_length, eval_num_epi=10):
     R = 0.0
     for ep_i in range(eval_num_epi):
         obs = env.reset()
+        dones = np.array([[False, False]])
 
         for et_i in range(episode_length):
+            if dones.any():
+                break
             torch_obs = [Variable(torch.Tensor(np.vstack(obs[:, i])),
                                   requires_grad=False)
                          for i in range(model.nagents)]
