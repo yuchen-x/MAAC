@@ -19,7 +19,7 @@ class AttentionSAC(object):
                  reward_scale=10.,
                  pol_hidden_dim=128,
                  critic_hidden_dim=128, attend_heads=4,
-                 grad_clip_norm=1.0,
+                 grad_clip_norm=0.5,
                  **kwargs):
         """
         Inputs:
@@ -90,7 +90,7 @@ class AttentionSAC(object):
         """
         Update central critic for all agents
         """
-        obs, acs, rews, next_obs, dones = sample
+        obs, acs, rews, next_obs, dones, valids = sample
         # Q loss
         next_acs = []
         next_log_pis = []
@@ -104,16 +104,27 @@ class AttentionSAC(object):
         critic_rets = self.critic(critic_in, regularize=True,
                                   logger=logger, niter=self.niter)
         q_loss = 0
+        # self.valids = []
         for a_i, nq, log_pi, (pq, regs) in zip(range(self.nagents), next_qs,
                                                next_log_pis, critic_rets):
-            target_q = (rews[a_i].view(-1, 1) +
-                        self.gamma * nq *
-                        (1 - dones[a_i].view(-1, 1)))
+
+            # valid = copy.copy(dones[a_i])
+            # indice = np.argmax(valid, axis=1)
+            # for row, col in enumerate(indice.tolist()):
+            #     if col == 0:
+            #         valid[row][:] = 1
+            #     else:
+            #         valid[row][0:col] = 1
+            #         valid[row][col+1:] = 0
+            # self.valids.append(valid)
+
+            target_q = valids[a_i].view(-1,1) * (rews[a_i].view(-1, 1) + self.gamma * nq * (1 - dones[a_i].view(-1, 1)))
             if soft:
                 target_q -= log_pi / self.reward_scale
             q_loss += MSELoss(pq, target_q.detach())
             for reg in regs:
                 q_loss += reg  # regularizing attention
+
         q_loss.backward()
         self.critic.scale_shared_grads()
         grad_norm = torch.nn.utils.clip_grad_norm(
@@ -126,8 +137,8 @@ class AttentionSAC(object):
             logger.add_scalar('grad_norms/q', grad_norm, self.niter)
         self.niter += 1
 
-    def update_policies(self, sample, env_name, soft=True, logger=None, **kwargs):
-        obs, acs, rews, next_obs, dones = sample
+    def update_policies(self, sample, soft=True, logger=None, **kwargs):
+        obs, acs, rews, next_obs, dones, valids = sample
         samp_acs = []
         all_probs = []
         all_log_pis = []
@@ -153,18 +164,11 @@ class AttentionSAC(object):
             v = (all_q * probs).sum(dim=1, keepdim=True)
             pol_target = q - v
             if soft:
-                valid = copy.deepcopy(dones[a_i])
-                indice = np.argmax(valid, axis=1) 
-                for row, col in enumerate(indice.tolist()):
-                    if col == 0:
-                        valid[row][:] = 1
-                    else:
-                        valid[row][0:col] = 1
+                # valid = self.valids[a_i]
+                # if env_name.startswith('pomdp') or env_name.startswith('simple'):
+                #     assert (valid == 1).all(), "Error in valid matrix ... "
 
-                if env_name.startswith('pomdp') or env_name.startswith('simple'):
-                    assert (valid == 1).all(), "Error in valid matrix ... "
-
-                pol_loss = (valid.view(-1,1) * log_pi * (log_pi / self.reward_scale - pol_target).detach()).mean()
+                pol_loss = (valids[a_i].view(-1,1) * log_pi * (log_pi / self.reward_scale - pol_target).detach()).mean()
             else:
                 pol_loss = (log_pi * (-pol_target).detach()).mean()
             for reg in pol_regs:

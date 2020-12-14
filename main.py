@@ -18,8 +18,71 @@ from marl_envs.my_env.small_box_pushing import SmallBoxPushing as SBP
 from marl_envs.particle_envs.make_env import make_env
 
 
-def make_parallel_env(config, n_rollout_threads, seed):
+def make_parallel_env(config, env_args, n_rollout_threads, seed):
     env_id = config.env_id
+
+    def get_env_fn(rank):
+        def init_env():
+            if env_id.startswith('CT'):
+                env = CT(grid_dim=tuple(config.grid_dim), **env_args)
+            elif env_id.startswith('SBP'):
+                env = SBP(tuple(config.grid_dim), **env_args)
+            else:
+                env = make_env(env_id, 
+                               discrete_action=True, 
+                               discrete_action_input=True, 
+                               **env_args)
+                if seed is not None:
+                    env.seed(seed + rank)
+            if seed is not None:
+                np.random.seed(seed + rank)
+                random.seed(seed + rank)
+            return env
+        return init_env
+    if n_rollout_threads == 1:
+        return DummyVecEnv([get_env_fn(0)])
+    else:
+        return SubprocVecEnv([get_env_fn(i) for i in range(n_rollout_threads)])
+
+def make_test_env(config, env_args):
+    env_id = config.env_id
+    def get_env_fn(rank):
+        def init_env():
+            if env_id.startswith('CT'):
+                env = CT(grid_dim=tuple(config.grid_dim), **env_args)
+            elif env_id.startswith('SBP'):
+                env = SBP(tuple(config.grid_dim), **env_args)
+            else:
+                env = make_env(env_id, 
+                               discrete_action=True,
+                               discrete_action_input=True,
+                               **env_args)
+            return env
+        return init_env
+    return DummyVecEnv([get_env_fn(0)])
+
+def run(config):
+    model_dir = Path('./models') / config.env_id / config.model_name
+    if not model_dir.exists():
+        run_num = 1
+    else:
+        exst_run_nums = [int(str(folder.name).split('run')[1]) for folder in
+                         model_dir.iterdir() if
+                         str(folder.name).startswith('run')]
+        if len(exst_run_nums) == 0:
+            run_num = 1
+        else:
+            run_num = max(exst_run_nums) + 1
+
+    curr_run = 'run%i' % run_num
+    run_dir = model_dir / curr_run
+    log_dir = run_dir / 'logs'
+    os.makedirs(log_dir)
+    logger = SummaryWriter(str(log_dir))
+
+    torch.manual_seed(config.seed)
+    np.random.seed(config.seed)
+    random.seed(config.seed)
 
     if config.env_id.startswith('CT'):
         env_args = {'terminate_step': config.episode_length,
@@ -45,56 +108,10 @@ def make_parallel_env(config, n_rollout_threads, seed):
                     'discrete_mul': config.discrete_mul,
                     'config_name': config.config_name}
 
-    def get_env_fn(rank):
-        def init_env():
-            if env_id.startswith('CT'):
-                env = CT(grid_dim=tuple(config.grid_dim), **env_args)
-            elif env_id.startswith('SBP'):
-                env = SBP(tuple(config.grid_dim), **env_args)
-            else:
-                env = make_env(env_id, 
-                               discrete_action=True, 
-                               discrete_action_input=True, 
-                               **env_args)
-                if seed is not None:
-                    env.seed(seed + rank)
-            if seed is not None:
-                np.random.seed(seed + rank)
-                random.seed(seed + rank)
-            return env
-        return init_env
-    if n_rollout_threads == 1:
-        return DummyVecEnv([get_env_fn(0)])
-    else:
-        return SubprocVecEnv([get_env_fn(i) for i in range(n_rollout_threads)])
-
-def run(config):
-    model_dir = Path('./models') / config.env_id / config.model_name
-    if not model_dir.exists():
-        run_num = 1
-    else:
-        exst_run_nums = [int(str(folder.name).split('run')[1]) for folder in
-                         model_dir.iterdir() if
-                         str(folder.name).startswith('run')]
-        if len(exst_run_nums) == 0:
-            run_num = 1
-        else:
-            run_num = max(exst_run_nums) + 1
-
-    curr_run = 'run%i' % run_num
-    run_dir = model_dir / curr_run
-    log_dir = run_dir / 'logs'
-    os.makedirs(log_dir)
-    logger = SummaryWriter(str(log_dir))
-
-    torch.manual_seed(config.seed)
-    np.random.seed(config.seed)
-    random.seed(config.seed)
-
-    env = make_parallel_env(config, config.n_rollout_threads, config.seed)
+    env = make_parallel_env(config, env_args, config.n_rollout_threads, config.seed)
 
     # create an env for testing
-    env_test = make_parallel_env(config, 1, None)
+    env_test = make_test_env(config, env_args)
 
     model = AttentionSAC.init_from_env(env,
                                        tau=config.tau,
@@ -133,6 +150,7 @@ def run(config):
         torch_H = [[None] for _ in range(obs.shape[1])]
         model.prep_rollouts(device='cpu')
 
+        dones_count = []
         for et_i in range(config.episode_length):
             # rearrange observations to be per agent, and convert to torch Variable
             torch_obs = [Variable(torch.Tensor(np.vstack(obs[:, i])),
@@ -145,7 +163,26 @@ def run(config):
             # rearrange actions to be per environment
             actions = [[ac[i] for ac in agent_actions] for i in range(config.n_rollout_threads)]
             next_obs, rewards, dones, _  = env.step(actions)
-            replay_buffer.push(obs, agent_actions, rewards, next_obs, dones)
+            valids = np.ones_like(dones)
+
+            # modify valids value depending on terminated env 
+            if len(dones_count) > 0:
+                valids[np.array(dones_count)] = False
+
+            # count the terminated env
+            if dones.any():
+                dones_epis = list(np.nonzero(dones.all(axis=1))[0])
+                for epi_id in dones_epis:
+                    if epi_id not in dones_count:
+                        dones_count.append(epi_id)
+
+            # if all envs done, update recording index in the buffer
+            if len(dones_count) == config.n_rollout_threads:
+                replay_buffer.push(obs, agent_actions, rewards, next_obs, dones, valids, all_epis_done=True)
+                break
+            else:
+                replay_buffer.push(obs, agent_actions, rewards, next_obs, dones, valids)
+ 
             obs = next_obs
             t += config.n_rollout_threads
             if (len(replay_buffer) >= config.batch_size and
@@ -158,18 +195,19 @@ def run(config):
                     sample = replay_buffer.sample(config.batch_size,
                                                   to_gpu=config.use_gpu)
                     model.update_critic(sample, logger=logger)
-                    model.update_policies(sample, config.env_id, logger=logger)
+                    model.update_policies(sample, logger=logger)
                     model.update_all_targets()
                 model.prep_rollouts(device='cpu')
 
         if ep_i % config.save_rate == 0:
             save_test_data(config.run_idx, test_returns, config.save_dir)
+            save_ckpt(config.run_idx, model, config.save_dir)
 
-        # ep_rews = replay_buffer.get_average_rewards(
-        #     config.episode_length * config.n_rollout_threads)
-        # for a_i, a_ep_rew in enumerate(ep_rews):
-        #     logger.add_scalar('agent%i/mean_episode_rewards' % a_i,
-        #                       a_ep_rew * config.episode_length, ep_i)
+        ep_rews = replay_buffer.get_average_rewards(
+            config.episode_length * config.n_rollout_threads)
+        for a_i, a_ep_rew in enumerate(ep_rews):
+            logger.add_scalar('agent%i/mean_episode_rewards' % a_i,
+                              a_ep_rew * config.episode_length, ep_i)
 
         # if ep_i % config.save_interval < config.n_rollout_threads:
         #     model.prep_rollouts(device='cpu')
@@ -181,20 +219,23 @@ def run(config):
     save_test_data(config.run_idx, test_returns, config.save_dir)
     save_ckpt(config.run_idx, model, config.save_dir)
     env.close()
+    env_test.close()
     print("Finish entire training ... ", flush=True)
-    # logger.export_scalars_to_json(str(log_dir / 'summary.json'))
-    # logger.close()
+    logger.export_scalars_to_json(str(log_dir / 'summary.json'))
+    logger.close()
 
 def evaluate(env, model, gamma, episode_length, eval_num_epi=10):
     for agent in model.agents:
         agent.policy.eval()
-
     R = 0.0
     for ep_i in range(eval_num_epi):
         obs = env.reset()
         torch_H = [[None] for _ in range(obs.shape[1])]
+        dones = np.array([[False, False]])
 
         for et_i in range(episode_length):
+            if dones.any():
+                break
             torch_obs = [Variable(torch.Tensor(np.vstack(obs[:, i])),
                                   requires_grad=False).unsqueeze(1)
                          for i in range(model.nagents)]
@@ -202,6 +243,7 @@ def evaluate(env, model, gamma, episode_length, eval_num_epi=10):
             agent_actions = [ac.data.numpy() for ac in torch_agent_actions]
             actions = [[ac[i] for ac in agent_actions] for i in range(1)]
             next_obs, rewards, dones, _  = env.step(actions)
+            obs = next_obs
             R += gamma**et_i*np.sum(rewards)
 
     for agent in model.agents:
@@ -252,36 +294,37 @@ def load_ckpt(run_idx, model, save_dir):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("env_id", help="Name of environment")
-    parser.add_argument("model_name",
+    parser.add_argument("--env_id", default='simple_collect_treasure', type=str,
+                        help="Name of environment")
+    parser.add_argument("--model_name", default='test', type=str,
                         help="Name of directory to store " +
                              "model/training contents")
-    parser.add_argument("--n_rollout_threads", default=2, type=int)
-    parser.add_argument("--buffer_length", default=int(1e6), type=int)
-    parser.add_argument("--n_episodes", default=100000, type=int)
-    parser.add_argument("--episode_length", default=25, type=int)
+    parser.add_argument("--n_rollout_threads", default=12, type=int)
+    parser.add_argument("--buffer_length", default=int(1e4), type=int)
+    parser.add_argument("--n_episodes", default=50000, type=int)
+    parser.add_argument("--episode_length", default=100, type=int)
     parser.add_argument("--steps_per_update", default=100, type=int)
     parser.add_argument("--num_updates", default=4, type=int,
                         help="Number of updates per update cycle")
     parser.add_argument("--batch_size",
-                        default=1024, type=int,
+                        default=10, type=int,
                         help="Batch size for training")
     parser.add_argument("--save_interval", default=1000, type=int)
-    parser.add_argument("--pol_hidden_dim", default=64, type=int)
-    parser.add_argument("--critic_hidden_dim", default=64, type=int)
+    parser.add_argument("--pol_hidden_dim", default=128, type=int)
+    parser.add_argument("--critic_hidden_dim", default=128, type=int)
     parser.add_argument("--attend_heads", default=4, type=int)
     parser.add_argument("--pi_lr", default=0.001, type=float)
     parser.add_argument("--q_lr", default=0.001, type=float)
-    parser.add_argument("--tau", default=0.001, type=float)
-    parser.add_argument("--gamma", default=0.95, type=float)
+    parser.add_argument("--tau", default=0.0005, type=float)
+    parser.add_argument("--gamma", default=0.99, type=float)
     parser.add_argument("--reward_scale", default=100., type=float)
     parser.add_argument("--use_gpu", action='store_true')
     parser.add_argument("--seed", default=0, type=int)
     parser.add_argument("--grad_clip_norm", default=0.5, type=float)
     # env args
+    parser.add_argument("--n_agent", default=8, type=int)
     parser.add_argument('--grid_dim', nargs=2, default=[4,4], type=int)
     parser.add_argument("--n_target", default=1, type=int)
-    parser.add_argument("--n_agent", default=2, type=int)
     parser.add_argument("--small_box_only", action='store_true')
     parser.add_argument("--terminal_reward_only", action='store_true')
     parser.add_argument("--random_init", action='store_true')

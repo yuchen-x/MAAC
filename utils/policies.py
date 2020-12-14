@@ -7,7 +7,7 @@ class BasePolicy(nn.Module):
     """
     Base policy network
     """
-    def __init__(self, input_dim, out_dim, hidden_dim=64, nonlin=F.leaky_relu,
+    def __init__(self, input_dim, out_dim, hidden_dim=128, nonlin=F.leaky_relu,
                  norm_in=True, onehot_dim=0):
         """
         Inputs:
