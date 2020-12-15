@@ -4,6 +4,7 @@ import os
 import numpy as np
 import random
 import pickle
+import time
 
 from gym.spaces import Box, Discrete
 from pathlib import Path
@@ -130,6 +131,7 @@ def run(config):
                                     [acsp.shape[0] if isinstance(acsp, Box) else acsp.n
                                     for acsp in env.action_space])
     t = 0
+    time_counter = time.time() 
     test_returns = []
     for ep_i in range(0, config.n_episodes, config.n_rollout_threads):
 
@@ -139,7 +141,9 @@ def run(config):
                                    config.gamma, 
                                    config.episode_length, 
                                    eval_num_epi=config.eval_num_epi)
-            print(f"{[config.run_idx]} Finished: {ep_i}/{config.n_episodes} Evaluate learned policies with averaged returns {test_return/config.n_agent} ...", flush=True)
+            time_cost = round((time.time() - time_counter) / 3600,3)
+            time_counter = time.time()
+            print(f"{[config.run_idx]} Finished: {ep_i}/{config.n_episodes} took {time_cost}hr, Evaluate learned policies with averaged returns {test_return/config.n_agent} ...", flush=True)
             test_returns.append(test_return)
 
         # print("Episodes %i-%i of %i" % (ep_i + 1,
