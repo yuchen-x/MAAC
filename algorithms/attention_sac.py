@@ -104,19 +104,8 @@ class AttentionSAC(object):
         critic_rets = self.critic(critic_in, regularize=True,
                                   logger=logger, niter=self.niter)
         q_loss = 0
-        # self.valids = []
         for a_i, nq, log_pi, (pq, regs) in zip(range(self.nagents), next_qs,
                                                next_log_pis, critic_rets):
-
-            # valid = copy.copy(dones[a_i])
-            # indice = np.argmax(valid, axis=1)
-            # for row, col in enumerate(indice.tolist()):
-            #     if col == 0:
-            #         valid[row][:] = 1
-            #     else:
-            #         valid[row][0:col] = 1
-            #         valid[row][col+1:] = 0
-            # self.valids.append(valid)
 
             target_q = valids[a_i].view(-1,1) * (rews[a_i].view(-1, 1) + self.gamma * nq * (1 - dones[a_i].view(-1, 1)))
             if soft:
@@ -164,10 +153,6 @@ class AttentionSAC(object):
             v = (all_q * probs).sum(dim=1, keepdim=True)
             pol_target = q - v
             if soft:
-                # valid = self.valids[a_i]
-                # if env_name.startswith('pomdp') or env_name.startswith('simple'):
-                #     assert (valid == 1).all(), "Error in valid matrix ... "
-
                 pol_loss = (valids[a_i].view(-1,1) * log_pi * (log_pi / self.reward_scale - pol_target).detach()).mean()
             else:
                 pol_loss = (log_pi * (-pol_target).detach()).mean()
