@@ -100,7 +100,7 @@ class ReplayBufferEpi(object):
     """
     Replay Buffer for multi-agent RL with parallel rollouts
     """
-    def __init__(self, max_episodes, epi_len, num_agents, obs_dims, ac_dims):
+    def __init__(self, max_episodes, epi_len, num_agents, obs_dims, ac_dims, s_dim):
         """
         Inputs:
             max_episodes (int): Maximum number of episodes to store in buffer
@@ -112,12 +112,19 @@ class ReplayBufferEpi(object):
         self.max_episodes = max_episodes
         self.epi_len = epi_len
         self.num_agents = num_agents
+
+        # add buff to record state info
+        self.state_buff = []
+        self.next_state_buff = []
         self.obs_buffs = [] # n_agent x n_epi x epi_len x obsdim
         self.ac_buffs = []
         self.rew_buffs = []
         self.next_obs_buffs = []
         self.done_buffs = []
         self.valid_buffs = []
+
+        self.state_buff.append(np.zeros((max_episodes, epi_len, s_dim), dtype=np.float32))
+        self.next_state_buff.append(np.zeros((max_episodes, epi_len, s_dim), dtype=np.float32))
         for odim, adim in zip(obs_dims, ac_dims):
             self.obs_buffs.append(np.zeros((max_episodes, epi_len, odim), dtype=np.float32))
             self.ac_buffs.append(np.zeros((max_episodes, epi_len, adim), dtype=np.float32))
@@ -133,10 +140,13 @@ class ReplayBufferEpi(object):
     def __len__(self):
         return self.filled_i
 
-    def push(self, observations, actions, rewards, next_observations, dones, valids, all_epis_done=False):
+    def push(self, state, observations, actions, rewards, next_state, next_observations, dones, valids, all_epis_done=False):
         self.nentries = observations.shape[0]  # handle multiple parallel environments
         if self.curr_i + self.nentries > self.max_episodes:
             rollover = self.max_episodes - self.curr_i # num of indices to roll over
+
+            self.state_buff[0] = np.roll(self.state_buff[0], rollover, axis=0)
+            self.next_state_buff[0] = np.roll(self.next_state_buff[0], rollover, axis=0)
             for agent_i in range(self.num_agents):
                 self.obs_buffs[agent_i] = np.roll(self.obs_buffs[agent_i],
                                                   rollover, axis=0)
@@ -150,9 +160,14 @@ class ReplayBufferEpi(object):
                                                    rollover, axis=0)
                 self.valid_buffs[agent_i] = np.roll(self.done_buffs[agent_i],
                                                    rollover, axis=0)
-
             self.curr_i = 0
             self.filled_i = self.max_episodes
+
+        self.state_buff[0][self.curr_i:self.curr_i + self.nentries][:, self.curr_exp_i] \
+                = np.vstack(state)
+        self.next_state_buff[0][self.curr_i:self.curr_i + self.nentries][:, self.curr_exp_i] \
+                = np.vstack(next_state)
+
         for agent_i in range(self.num_agents):
             self.obs_buffs[agent_i][self.curr_i:self.curr_i + self.nentries][:,self.curr_exp_i] \
                     = np.vstack(observations[:, agent_i])
@@ -200,9 +215,11 @@ class ReplayBufferEpi(object):
         else:
             ret_rews = [torch.from_numpy(self.rew_buffs[i][inds]).float() for i in range(self.num_agents)]
 
-        return ([torch.from_numpy(self.obs_buffs[i][inds]).float() for i in range(self.num_agents)],
+        return ([torch.from_numpy(self.state_buff[0][inds]).float() for _ in range(self.num_agents)],
+                [torch.from_numpy(self.obs_buffs[i][inds]).float() for i in range(self.num_agents)],
                 [torch.from_numpy(self.ac_buffs[i][inds]).float() for i in range(self.num_agents)],
                 ret_rews,
+                [torch.from_numpy(self.next_state_buff[0][inds]).float() for _ in range(self.num_agents)],
                 [torch.from_numpy(self.next_obs_buffs[i][inds]).float() for i in range(self.num_agents)],
                 [torch.from_numpy(self.done_buffs[i][inds]).float() for i in range(self.num_agents)],
                 [torch.from_numpy(self.valid_buffs[i][inds]).float() for i in range(self.num_agents)])

@@ -18,7 +18,7 @@ class AttentionSAC(object):
                  reward_scale=10.,
                  pol_hidden_dim=128,
                  critic_hidden_dim=128, attend_heads=4,
-                 grad_clip_norm=0.5,
+                 grad_clip_norm=0.5, state_critic=False,
                  **kwargs):
         """
         Inputs:
@@ -61,6 +61,7 @@ class AttentionSAC(object):
         self.trgt_critic_dev = 'cpu'  # device for target critics
         self.niter = 0
         self.grad_clip_norm = grad_clip_norm
+        self.state_critic = state_critic
 
     @property
     def policies(self):
@@ -90,7 +91,7 @@ class AttentionSAC(object):
         Update central critic for all agents
         """
         
-        obs, acs, rews, next_obs, dones, valids = sample
+        state, obs, acs, rews, next_state, next_obs, dones, valids = sample
         # Q loss
         next_acs = []
         next_log_pis = []
@@ -99,8 +100,14 @@ class AttentionSAC(object):
             curr_next_ac, curr_next_log_pi = next_act_and_log_pi
             next_acs.append(curr_next_ac)
             next_log_pis.append(curr_next_log_pi)
-        trgt_critic_in = list(zip(next_obs, next_acs))
-        critic_in = list(zip(obs, acs))
+
+        if self.state_critic:
+            trgt_critic_in = list(zip(next_state, next_acs))
+            critic_in = list(zip(state, acs))
+        else:
+            trgt_critic_in = list(zip(next_obs, next_acs))
+            critic_in = list(zip(obs, acs))
+
         next_qs = self.target_critic(trgt_critic_in)
         critic_rets = self.critic(critic_in, regularize=True,
                                   logger=logger, niter=self.niter)
@@ -131,7 +138,7 @@ class AttentionSAC(object):
         del critic_rets
 
     def update_policies(self, sample, soft=True, logger=None, **kwargs):
-        obs, acs, rews, next_obs, dones, valids = sample
+        state, obs, acs, rews, next_state, next_obs, dones, valids = sample
         samp_acs = []
         all_probs = []
         all_log_pis = []
@@ -149,7 +156,10 @@ class AttentionSAC(object):
             all_log_pis.append(log_pi)
             all_pol_regs.append(pol_regs)
 
-        critic_in = list(zip(obs, samp_acs))
+        if self.state_critic:
+            critic_in = list(zip(state, samp_acs))
+        else:
+            critic_in = list(zip(obs, samp_acs))
         critic_rets = self.critic(critic_in, return_all_q=True)
         for a_i, probs, log_pi, pol_regs, (q, all_q) in zip(range(self.nagents), all_probs,
                                                             all_log_pis, all_pol_regs,
@@ -241,10 +251,12 @@ class AttentionSAC(object):
         torch.save(save_dict, filename)
 
     @classmethod
-    def init_from_env(cls, env, gamma=0.95, tau=0.01,
+    def init_from_env(cls, env, env_info, 
+                      gamma=0.95, tau=0.01,
                       pi_lr=0.01, q_lr=0.01,
                       reward_scale=10.,
                       pol_hidden_dim=128, critic_hidden_dim=128, attend_heads=4,
+                      state_critic=False,
                       **kwargs):
         """
         Instantiate instance of this class from multi-agent environment
@@ -261,7 +273,10 @@ class AttentionSAC(object):
                               env.observation_space):
             agent_init_params.append({'num_in_pol': obsp.shape[0],
                                       'num_out_pol': acsp.n})
-            sa_size.append((obsp.shape[0], acsp.n))
+            if state_critic:
+                sa_size.append((env_info['state_shape'], acsp.n))
+            else:
+                sa_size.append((obsp.shape[0], acsp.n))
 
         init_dict = {'gamma': gamma, 'tau': tau,
                      'pi_lr': pi_lr, 'q_lr': q_lr,
@@ -270,7 +285,8 @@ class AttentionSAC(object):
                      'critic_hidden_dim': critic_hidden_dim,
                      'attend_heads': attend_heads,
                      'agent_init_params': agent_init_params,
-                     'sa_size': sa_size}
+                     'sa_size': sa_size,
+                     'state_critic': state_critic}
         instance = cls(**init_dict)
         instance.init_dict = init_dict
         return instance

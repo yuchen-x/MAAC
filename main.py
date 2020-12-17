@@ -116,7 +116,10 @@ def run(config):
     # create an env for testing
     env_test = make_test_env(config, env_args)
 
+    env_info = env_test.envs[0].get_env_info()
+
     model = AttentionSAC.init_from_env(env,
+                                       env_info,
                                        tau=config.tau,
                                        pi_lr=config.pi_lr,
                                        q_lr=config.q_lr,
@@ -125,13 +128,16 @@ def run(config):
                                        critic_hidden_dim=config.critic_hidden_dim,
                                        attend_heads=config.attend_heads,
                                        reward_scale=config.reward_scale,
-                                       grad_clip_norm=config.grad_clip_norm)
+                                       grad_clip_norm=config.grad_clip_norm,
+                                       state_critic=config.state_critic)
+
     replay_buffer = ReplayBufferEpi(config.buffer_length, 
                                     config.episode_length,
                                     model.nagents,
                                     [obsp.shape[0] for obsp in env.observation_space],
                                     [acsp.shape[0] if isinstance(acsp, Box) else acsp.n
-                                    for acsp in env.action_space])
+                                    for acsp in env.action_space],
+                                    env_info['state_shape'])
     t = 0
     time_counter = time.time() 
     test_returns = []
@@ -153,7 +159,7 @@ def run(config):
         #                                 ep_i + 1 + config.n_rollout_threads,
         #                                 config.n_episodes))
 
-        obs = env.reset()
+        state, obs = env.reset()
         torch_H = [[None] for _ in range(obs.shape[1])]
         model.prep_rollouts(device='cpu')
 
@@ -169,7 +175,10 @@ def run(config):
             agent_actions = [ac.data.numpy() for ac in torch_agent_actions]
             # rearrange actions to be per environment
             actions = [[ac[i] for ac in agent_actions] for i in range(config.n_rollout_threads)]
-            next_obs, rewards, dones, _  = env.step(actions)
+
+            # return extra state info
+            next_state, next_obs, rewards, dones, _  = env.step(actions)
+
             valids = np.ones_like(dones)
 
             # modify valids value depending on terminated env 
@@ -185,10 +194,10 @@ def run(config):
 
             # if all envs done, update recording index in the buffer
             if len(dones_count) == config.n_rollout_threads:
-                replay_buffer.push(obs, agent_actions, rewards, next_obs, dones, valids, all_epis_done=True)
+                replay_buffer.push(state, obs, agent_actions, rewards, next_state, next_obs, dones, valids, all_epis_done=True)
                 break
             else:
-                replay_buffer.push(obs, agent_actions, rewards, next_obs, dones, valids)
+                replay_buffer.push(state, obs, agent_actions, rewards, next_state, next_obs, dones, valids)
  
             obs = next_obs
             t += config.n_rollout_threads
@@ -320,6 +329,7 @@ if __name__ == '__main__':
     parser.add_argument("--save_interval", default=1000, type=int)
     parser.add_argument("--pol_hidden_dim", default=128, type=int)
     parser.add_argument("--critic_hidden_dim", default=128, type=int)
+    parser.add_argument("--state_critic", action='store_true')
     parser.add_argument("--attend_heads", default=4, type=int)
     parser.add_argument("--pi_lr", default=0.001, type=float)
     parser.add_argument("--q_lr", default=0.001, type=float)
