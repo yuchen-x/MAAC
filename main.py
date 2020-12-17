@@ -45,7 +45,7 @@ def make_parallel_env(config, env_args, n_rollout_threads, seed):
     else:
         return SubprocVecEnv([get_env_fn(i) for i in range(n_rollout_threads)])
 
-def make_test_env(config, env_args):
+def make_test_env(config, env_args, seed):
     env_id = config.env_id
     def get_env_fn(rank):
         def init_env():
@@ -58,6 +58,7 @@ def make_test_env(config, env_args):
                                discrete_action=True,
                                discrete_action_input=True,
                                **env_args)
+                env.seed(seed)
             return env
         return init_env
     return DummyVecEnv([get_env_fn(0)])
@@ -114,7 +115,7 @@ def run(config):
     env = make_parallel_env(config, env_args, config.n_rollout_threads, config.seed)
 
     # create an env for testing
-    env_test = make_test_env(config, env_args)
+    env_test = make_test_env(config, env_args, config.seed)
 
     env_info = env_test.envs[0].get_env_info()
 
@@ -138,6 +139,7 @@ def run(config):
                                     [acsp.shape[0] if isinstance(acsp, Box) else acsp.n
                                     for acsp in env.action_space],
                                     env_info['state_shape'])
+
     t = 0
     time_counter = time.time() 
     test_returns = []
