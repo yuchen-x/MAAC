@@ -136,8 +136,6 @@ class ReplayBufferEpi(object):
     def push(self, observations, actions, rewards, next_observations, dones, valids, all_epis_done=False):
         self.nentries = observations.shape[0]  # handle multiple parallel environments
         if self.curr_i + self.nentries > self.max_episodes:
-            import ipdb
-            ipdb.set_trace()
             rollover = self.max_episodes - self.curr_i # num of indices to roll over
             for agent_i in range(self.num_agents):
                 self.obs_buffs[agent_i] = np.roll(self.obs_buffs[agent_i],
