@@ -39,7 +39,7 @@ class BasePolicy(nn.Module):
         onehot = None
         if type(X) is tuple:
             X, onehot = X
-        inp = self.in_fn(X.view(-1, X.shape[-1])).view(X.shape)  # don't batchnorm onehot
+        inp = self.in_fn(X.view(-1, X.shape[-1])).reshape(X.shape)  # don't batchnorm onehot
         if onehot is not None:
             inp = torch.cat((onehot, inp), dim=1)
         h1 = self.nonlin(self.fc1(inp))
@@ -60,7 +60,7 @@ class DiscretePolicy(BasePolicy):
                 return_log_pi=False, regularize=False,
                 return_entropy=False):
         out, H = super(DiscretePolicy, self).forward(obs, H)
-        out = out.view(-1, out.shape[-1])
+        out = out.reshape(-1, out.shape[-1])
         probs = F.softmax(out, dim=1)
         on_gpu = next(self.parameters()).is_cuda
         if sample:

@@ -80,10 +80,12 @@ def run(config):
     log_dir = run_dir / 'logs'
     os.makedirs(log_dir)
     logger = SummaryWriter(str(log_dir))
+    logger = None
 
     torch.manual_seed(config.seed)
     np.random.seed(config.seed)
     random.seed(config.seed)
+    torch.set_num_threads(1)
 
     if config.env_id.startswith('CT'):
         env_args = {'terminate_step': config.episode_length,
@@ -133,6 +135,7 @@ def run(config):
     t = 0
     time_counter = time.time() 
     test_returns = []
+
     for ep_i in range(0, config.n_episodes, config.n_rollout_threads):
 
         if ep_i % (config.eval_freq - (config.eval_freq % config.n_rollout_threads)) == 0:
@@ -198,6 +201,7 @@ def run(config):
                 for u_i in range(config.num_updates):
                     sample = replay_buffer.sample(config.batch_size,
                                                   to_gpu=config.use_gpu)
+
                     model.update_critic(sample, logger=logger)
                     model.update_policies(sample, logger=logger)
                     model.update_all_targets()
@@ -207,11 +211,11 @@ def run(config):
             save_test_data(config.run_idx, test_returns, config.save_dir)
             save_ckpt(config.run_idx, model, config.save_dir)
 
-        ep_rews = replay_buffer.get_average_rewards(
-            config.episode_length * config.n_rollout_threads)
-        for a_i, a_ep_rew in enumerate(ep_rews):
-            logger.add_scalar('agent%i/mean_episode_rewards' % a_i,
-                              a_ep_rew * config.episode_length, ep_i)
+        # ep_rews = replay_buffer.get_average_rewards(
+        #     config.n_rollout_threads)
+        # for a_i, a_ep_rew in enumerate(ep_rews):
+        #     logger.add_scalar('agent%i/mean_episode_rewards' % a_i,
+        #                       a_ep_rew * config.episode_length, ep_i)
 
         # if ep_i % config.save_interval < config.n_rollout_threads:
         #     model.prep_rollouts(device='cpu')

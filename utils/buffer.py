@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 from torch import Tensor
 from torch.autograd import Variable
 
@@ -197,13 +198,14 @@ class ReplayBufferEpi(object):
                              self.rew_buffs[i][:self.filled_i].std())
                         for i in range(self.num_agents)]
         else:
-            ret_rews = [cast(self.rew_buffs[i][inds]) for i in range(self.num_agents)]
-        return ([cast(self.obs_buffs[i][inds]) for i in range(self.num_agents)],
-                [cast(self.ac_buffs[i][inds]) for i in range(self.num_agents)],
+            ret_rews = [torch.from_numpy(self.rew_buffs[i][inds]).float() for i in range(self.num_agents)]
+
+        return ([torch.from_numpy(self.obs_buffs[i][inds]).float() for i in range(self.num_agents)],
+                [torch.from_numpy(self.ac_buffs[i][inds]).float() for i in range(self.num_agents)],
                 ret_rews,
-                [cast(self.next_obs_buffs[i][inds]) for i in range(self.num_agents)],
-                [cast(self.done_buffs[i][inds]) for i in range(self.num_agents)],
-                [cast(self.valid_buffs[i][inds]) for i in range(self.num_agents)])
+                [torch.from_numpy(self.next_obs_buffs[i][inds]).float() for i in range(self.num_agents)],
+                [torch.from_numpy(self.done_buffs[i][inds]).float() for i in range(self.num_agents)],
+                [torch.from_numpy(self.valid_buffs[i][inds]).float() for i in range(self.num_agents)])
 
     def get_average_rewards(self, N):
         if self.filled_i == self.max_episodes:

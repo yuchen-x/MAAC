@@ -101,16 +101,18 @@ class AttentionCritic(nn.Module):
             logger (TensorboardX SummaryWriter): If passed in, important values
                                                  are logged
         """
+
         if agents is None:
             agents = range(len(self.critic_encoders))
-        states = [s.view(-1,s.shape[-1]) for s, a in inps]
-        actions = [a.view(-1,a.shape[-1]) for s, a in inps]
-        inps = [torch.cat((s.view(-1,s.shape[-1]), 
+
+        states = [s for s, a in inps]
+        actions = [a for s, a in inps]
+        inps_new = [torch.cat((s.view(-1,s.shape[-1]), 
                            a.view(-1,a.shape[-1])), dim=-1) for s, a in inps]
         # extract state-action encoding for each agent
-        sa_encodings = [encoder(inp) for encoder, inp in zip(self.critic_encoders, inps)]
+        sa_encodings = [encoder(inp) for encoder, inp in zip(self.critic_encoders, inps_new)]
         # extract state encoding for each agent that we're returning Q for
-        s_encodings = [self.state_encoders[a_i](states[a_i]) for a_i in agents]
+        s_encodings = [self.state_encoders[a_i](states[a_i].view(-1, states[a_i].shape[-1])) for a_i in agents]
         # extract keys for each head for each agent
         all_head_keys = [[k_ext(enc) for enc in sa_encodings] for k_ext in self.key_extractors]
         # extract sa values for each head for each agent
@@ -152,7 +154,7 @@ class AttentionCritic(nn.Module):
             agent_rets = []
             critic_in = torch.cat((s_encodings[i], *other_all_values[i]), dim=1)
             all_q = self.critics[a_i](critic_in)
-            int_acs = actions[a_i].max(dim=1, keepdim=True)[1]
+            int_acs = actions[a_i].view(-1,actions[a_i].shape[-1]).max(dim=1, keepdim=True)[1]
             q = all_q.gather(1, int_acs)
             if return_q:
                 agent_rets.append(q)

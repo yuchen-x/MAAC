@@ -90,12 +90,14 @@ class AttentionSAC(object):
         """
         Update central critic for all agents
         """
+        
         obs, acs, rews, next_obs, dones, valids = sample
         # Q loss
         next_acs = []
         next_log_pis = []
         for pi, ob in zip(self.target_policies, next_obs):
-            (curr_next_ac, curr_next_log_pi), _ = pi(ob, return_log_pi=True)
+            next_act_and_log_pi, _ = pi(ob, return_log_pi=True)
+            curr_next_ac, curr_next_log_pi = next_act_and_log_pi
             next_acs.append(curr_next_ac)
             next_log_pis.append(curr_next_log_pi)
         trgt_critic_in = list(zip(next_obs, next_acs))
@@ -126,6 +128,9 @@ class AttentionSAC(object):
             logger.add_scalar('grad_norms/q', grad_norm, self.niter)
         self.niter += 1
 
+        del next_qs
+        del critic_rets
+
     def update_policies(self, sample, soft=True, logger=None, **kwargs):
         obs, acs, rews, next_obs, dones, valids = sample
         samp_acs = []
@@ -134,11 +139,12 @@ class AttentionSAC(object):
         all_pol_regs = []
 
         for a_i, pi, ob in zip(range(self.nagents), self.policies, obs):
-            (curr_ac, probs, log_pi, pol_regs, ent), _ = pi(
+            returns, _ = pi(
                 ob, return_all_probs=True, return_log_pi=True,
                 regularize=True, return_entropy=True)
-            logger.add_scalar('agent%i/policy_entropy' % a_i, ent,
-                              self.niter)
+            curr_ac, probs, log_pi, pol_regs, ent = returns
+            # logger.add_scalar('agent%i/policy_entropy' % a_i, ent,
+            #                   self.niter)
             samp_acs.append(curr_ac)
             all_probs.append(probs)
             all_log_pis.append(log_pi)
@@ -174,6 +180,7 @@ class AttentionSAC(object):
                 logger.add_scalar('agent%i/grad_norms/pi' % a_i,
                                   grad_norm, self.niter)
 
+        del critic_rets
 
     def update_all_targets(self):
         """
