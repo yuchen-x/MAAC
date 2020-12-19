@@ -202,6 +202,8 @@ def run(config):
                 replay_buffer.push(state, obs, agent_actions, rewards, next_state, next_obs, dones, valids)
  
             obs = next_obs
+            state = next_state
+
             t += config.n_rollout_threads
             if (len(replay_buffer) >= config.batch_size and
                 (t % config.steps_per_update) < config.n_rollout_threads):

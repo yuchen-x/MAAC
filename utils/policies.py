@@ -8,7 +8,7 @@ class BasePolicy(nn.Module):
     Base policy network
     """
     def __init__(self, input_dim, out_dim, hidden_dim=128, nonlin=F.leaky_relu,
-                 norm_in=True, onehot_dim=0):
+                 norm_in=False, onehot_dim=0):
         """
         Inputs:
             input_dim (int): Number of dimensions in input
