@@ -15,13 +15,13 @@ def worker(remote, parent_remote, env_fn_wrapper):
             actions = [a.argmax() for a in data]
             a, ob, reward, done, valid, info = env.step(actions)
             #ob, reward, done, info = env.step(data)
+            s = env.get_state()
             if all(done):
                 ob = env.reset()
-            s = env.get_state()
             remote.send((s, ob, reward, done, info))
         elif cmd == 'reset':
-            s = env.get_state()
             ob = env.reset()
+            s = env.get_state()
             remote.send((s, ob))
         elif cmd == 'reset_task':
             ob = env.reset_task()
@@ -82,10 +82,10 @@ class SubprocVecEnv(VecEnv):
         state, obs = zip(*results)
         return np.stack(state), np.stack(obs)
 
-    def reset_task(self):
-        for remote in self.remotes:
-            remote.send(('reset_task', None))
-        return np.stack([remote.recv() for remote in self.remotes])
+    # def reset_task(self):
+    #     for remote in self.remotes:
+    #         remote.send(('reset_task', None))
+    #     return np.stack([remote.recv() for remote in self.remotes])
 
     def close(self):
         if self.closed:
