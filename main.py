@@ -80,8 +80,10 @@ def run(config):
     run_dir = model_dir / curr_run
     log_dir = run_dir / 'logs'
     os.makedirs(log_dir)
-    logger = SummaryWriter(str(log_dir))
-    logger = None
+    if config.logger:
+        logger = SummaryWriter(str(log_dir))
+    else:
+        logger = None
 
     torch.manual_seed(config.seed)
     np.random.seed(config.seed)
@@ -224,11 +226,12 @@ def run(config):
             save_test_data(config.run_idx, test_returns, config.save_dir)
             save_ckpt(config.run_idx, model, config.save_dir)
 
-        # ep_rews = replay_buffer.get_average_rewards(
-        #     config.n_rollout_threads)
-        # for a_i, a_ep_rew in enumerate(ep_rews):
-        #     logger.add_scalar('agent%i/mean_episode_rewards' % a_i,
-        #                       a_ep_rew * config.episode_length, ep_i)
+        if logger is not None:
+            ep_rews = replay_buffer.get_average_rewards(
+                config.n_rollout_threads)
+            for a_i, a_ep_rew in enumerate(ep_rews):
+                logger.add_scalar('agent%i/mean_episode_rewards' % a_i,
+                                  a_ep_rew * config.episode_length, ep_i)
 
         # if ep_i % config.save_interval < config.n_rollout_threads:
         #     model.prep_rollouts(device='cpu')
@@ -368,6 +371,7 @@ if __name__ == '__main__':
     parser.add_argument("--run_idx", default=0, type=int)
     parser.add_argument("--save_dir", default='test', type=str)
     parser.add_argument("--save_rate", default=1000, type=int)
+    parser.add_argument("--logger", action='store_true')
 
     config = parser.parse_args()
 
