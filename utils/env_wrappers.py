@@ -17,9 +17,12 @@ def worker(remote, parent_remote, env_fn_wrapper):
             #ob, reward, done, info = env.step(data)
             if all(done):
                 ob = env.reset()
+            # obs is state
+            ob = [env.get_state()]*env.n_agent
             remote.send((ob, reward, done, info))
         elif cmd == 'reset':
             ob = env.reset()
+            ob = [env.get_state()]*env.n_agent
             remote.send(ob)
         elif cmd == 'reset_task':
             ob = env.reset_task()
@@ -115,18 +118,20 @@ class DummyVecEnv(VecEnv):
 
     def step_wait(self):
         results = [env.step(a) for (a,env) in zip(self.actions, self.envs)]
-        results = [[results[0][1], results[0][2], results[0][3], results[0][5]]]
+        results = [[[self.envs[0].get_state()]*self.envs[0].n_agent, results[0][2], results[0][3], results[0][5]]]
         obs, rews, dones, infos = map(np.array, zip(*results))
         self.ts += 1
         for (i, done) in enumerate(dones):
             if all(done): 
                 obs[i] = self.envs[i].reset()
+                obs[i] = [self.envs[i].get_state()]*self.env[i].n_agent
                 self.ts[i] = 0
         self.actions = None
         return np.array(obs), np.array(rews), np.array(dones), infos
 
     def reset(self):        
         results = [env.reset() for env in self.envs]
+        results = [[env.get_state()]*env.n_agent for env in self.envs]
         return np.array(results)
 
     def close(self):

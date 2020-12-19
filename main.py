@@ -44,7 +44,7 @@ def make_parallel_env(config, env_args, n_rollout_threads, seed):
     else:
         return SubprocVecEnv([get_env_fn(i) for i in range(n_rollout_threads)])
 
-def make_test_env(config, env_args):
+def make_test_env(config, env_args, seed):
     env_id = config.env_id
     def get_env_fn(rank):
         def init_env():
@@ -57,6 +57,7 @@ def make_test_env(config, env_args):
                                discrete_action=True,
                                discrete_action_input=True,
                                **env_args)
+                env.seed(seed)
             return env
         return init_env
     return DummyVecEnv([get_env_fn(0)])
@@ -111,9 +112,12 @@ def run(config):
     env = make_parallel_env(config, env_args, config.n_rollout_threads, config.seed)
 
     # create an env for testing
-    env_test = make_test_env(config, env_args)
+    env_test = make_test_env(config, env_args, config.seed)
+
+    env_info = env_test.envs[0].get_env_info()
 
     model = AttentionSAC.init_from_env(env,
+                                       env_info,
                                        tau=config.tau,
                                        pi_lr=config.pi_lr,
                                        q_lr=config.q_lr,
@@ -122,8 +126,9 @@ def run(config):
                                        critic_hidden_dim=config.critic_hidden_dim,
                                        attend_heads=config.attend_heads,
                                        reward_scale=config.reward_scale)
+
     replay_buffer = ReplayBuffer(config.buffer_length, model.nagents,
-                                 [obsp.shape[0] for obsp in env.observation_space],
+                                 [env_info['state_shape'] for _ in range(env_info['n_agents'])],
                                  [acsp.shape[0] if isinstance(acsp, Box) else acsp.n
                                   for acsp in env.action_space])
     t = 0
@@ -185,11 +190,11 @@ def run(config):
             logger.add_scalar('agent%i/mean_episode_rewards' % a_i,
                               a_ep_rew * config.episode_length, ep_i)
 
-        if ep_i % config.save_interval < config.n_rollout_threads:
-            model.prep_rollouts(device='cpu')
-            os.makedirs(run_dir / 'incremental', exist_ok=True)
-            model.save(run_dir / 'incremental' / ('model_ep%i.pt' % (ep_i + 1)))
-            model.save(run_dir / 'model.pt')
+        # if ep_i % config.save_interval < config.n_rollout_threads:
+        #     model.prep_rollouts(device='cpu')
+        #     os.makedirs(run_dir / 'incremental', exist_ok=True)
+        #     model.save(run_dir / 'incremental' / ('model_ep%i.pt' % (ep_i + 1)))
+        #     model.save(run_dir / 'model.pt')
 
     model.save(run_dir / 'model.pt')
     save_test_data(config.run_idx, test_returns, config.save_dir)

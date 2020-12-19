@@ -227,7 +227,7 @@ class AttentionSAC(object):
         torch.save(save_dict, filename)
 
     @classmethod
-    def init_from_env(cls, env, gamma=0.95, tau=0.01,
+    def init_from_env(cls, env, env_info, gamma=0.95, tau=0.01,
                       pi_lr=0.01, q_lr=0.01,
                       reward_scale=10.,
                       pol_hidden_dim=128, critic_hidden_dim=128, attend_heads=4,
@@ -245,9 +245,9 @@ class AttentionSAC(object):
         sa_size = []
         for acsp, obsp in zip(env.action_space,
                               env.observation_space):
-            agent_init_params.append({'num_in_pol': obsp.shape[0],
+            agent_init_params.append({'num_in_pol': env_info['state_shape'],
                                       'num_out_pol': acsp.n})
-            sa_size.append((obsp.shape[0], acsp.n))
+            sa_size.append((env_info['state_shape'], acsp.n))
 
         init_dict = {'gamma': gamma, 'tau': tau,
                      'pi_lr': pi_lr, 'q_lr': q_lr,
