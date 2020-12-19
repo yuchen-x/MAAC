@@ -15,9 +15,9 @@ def worker(remote, parent_remote, env_fn_wrapper):
             actions = [a.argmax() for a in data]
             a, ob, reward, done, valid, info = env.step(actions)
             #ob, reward, done, info = env.step(data)
-            s = env.get_state()
             if all(done):
                 ob = env.reset()
+            s = env.get_state()
             remote.send((s, ob, reward, done, info))
         elif cmd == 'reset':
             ob = env.reset()
