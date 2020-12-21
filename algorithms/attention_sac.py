@@ -98,7 +98,7 @@ class AttentionSAC(object):
         for pi, ob in zip(self.target_policies, next_obs):
             next_act_and_log_pi, _ = pi(ob, return_log_pi=True)
             curr_next_ac, curr_next_log_pi = next_act_and_log_pi
-            next_acs.append(curr_next_ac)
+            next_acs.append(curr_next_ac.view(ob.shape[0], ob.shape[1], -1))
             next_log_pis.append(curr_next_log_pi)
 
         if self.state_critic:
@@ -152,7 +152,7 @@ class AttentionSAC(object):
             if logger is not None:
                 logger.add_scalar('agent%i/policy_entropy' % a_i, ent,
                                   self.niter)
-            samp_acs.append(curr_ac)
+            samp_acs.append(curr_ac.reshape(ob.shape[0], ob.shape[1], -1))
             all_probs.append(probs)
             all_log_pis.append(log_pi)
             all_pol_regs.append(pol_regs)

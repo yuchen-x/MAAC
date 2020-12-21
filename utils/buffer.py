@@ -214,9 +214,6 @@ class ReplayBufferEpi(object):
                 self.done_buffs[agent_i][self.curr_i:self.curr_i+self.nentries] = 0.0
                 self.valid_buffs[agent_i][self.curr_i:self.curr_i+self.nentries] = 0.0
 
-        for agent_i in range(self.num_agents):
-            assert (self.done_buffs[agent_i] == 0.0).all(), "some envs are done"
-
     def sample(self, N, to_gpu=False, norm_rews=False):
         if self.filled_i < self.max_episodes:
             inds = np.random.choice(np.arange(self.filled_i), size=N,
@@ -225,10 +222,6 @@ class ReplayBufferEpi(object):
             inds_0 = np.arange(0,self.curr_i)
             inds_1 = np.arange(self.curr_i+self.nentries, self.filled_i)
             inds = np.append(inds_0, inds_1)
-
-            for agent_i in range(self.num_agents):
-                assert (self.valid_buffs[agent_i][inds] == 1.0).all(), "some envs are unvalid"
-
             inds = np.random.choice(inds, size=N,
                                     replace=True)
         if to_gpu:
