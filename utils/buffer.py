@@ -158,7 +158,7 @@ class ReplayBufferEpi(object):
                     self.next_obs_buffs[agent_i], rollover, axis=0)
                 self.done_buffs[agent_i] = np.roll(self.done_buffs[agent_i],
                                                    rollover, axis=0)
-                self.valid_buffs[agent_i] = np.roll(self.done_buffs[agent_i],
+                self.valid_buffs[agent_i] = np.roll(self.valid_buffs[agent_i],
                                                    rollover, axis=0)
             self.curr_i = 0
             self.filled_i = self.max_episodes
@@ -217,13 +217,13 @@ class ReplayBufferEpi(object):
     def sample(self, N, to_gpu=False, norm_rews=False):
         if self.filled_i < self.max_episodes:
             inds = np.random.choice(np.arange(self.filled_i), size=N,
-                                    replace=True)
+                                    replace=False)
         else:
             inds_0 = np.arange(0,self.curr_i)
             inds_1 = np.arange(self.curr_i+self.nentries, self.filled_i)
             inds = np.append(inds_0, inds_1)
             inds = np.random.choice(inds, size=N,
-                                    replace=True)
+                                    replace=False)
         if to_gpu:
             cast = lambda x: Variable(Tensor(x), requires_grad=False).cuda()
         else:
