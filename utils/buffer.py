@@ -158,7 +158,7 @@ class ReplayBufferEpi(object):
                     self.next_obs_buffs[agent_i], rollover, axis=0)
                 self.done_buffs[agent_i] = np.roll(self.done_buffs[agent_i],
                                                    rollover, axis=0)
-                self.valid_buffs[agent_i] = np.roll(self.done_buffs[agent_i],
+                self.valid_buffs[agent_i] = np.roll(self.valid_buffs[agent_i],
                                                    rollover, axis=0)
             self.curr_i = 0
             self.filled_i = self.max_episodes
