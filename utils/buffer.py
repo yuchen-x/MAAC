@@ -217,13 +217,13 @@ class ReplayBufferEpi(object):
     def sample(self, N, to_gpu=False, norm_rews=False):
         if self.filled_i < self.max_episodes:
             inds = np.random.choice(np.arange(self.filled_i), size=N,
-                                    replace=True)
+                                    replace=False)
         else:
             inds_0 = np.arange(0,self.curr_i)
             inds_1 = np.arange(self.curr_i+self.nentries, self.filled_i)
             inds = np.append(inds_0, inds_1)
             inds = np.random.choice(inds, size=N,
-                                    replace=True)
+                                    replace=False)
         if to_gpu:
             cast = lambda x: Variable(Tensor(x), requires_grad=False).cuda()
         else:
