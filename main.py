@@ -132,7 +132,7 @@ def run(config):
                                        attend_heads=config.attend_heads,
                                        reward_scale=config.reward_scale,
                                        grad_clip_norm=config.grad_clip_norm,
-                                       state_critic=config.state_critic)
+                                       critic_linear_encode_in=config.critic_linear_encode_in)
 
     replay_buffer = ReplayBufferEpi(config.buffer_length, 
                                     config.episode_length,
@@ -336,7 +336,7 @@ if __name__ == '__main__':
     parser.add_argument("--save_interval", default=1000, type=int)
     parser.add_argument("--pol_hidden_dim", default=128, type=int)
     parser.add_argument("--critic_hidden_dim", default=128, type=int)
-    parser.add_argument("--state_critic", action='store_true')
+    parser.add_argument("--critic_linear_encode_in", action='store_true')
     parser.add_argument("--attend_heads", default=4, type=int)
     parser.add_argument("--pi_lr", default=0.001, type=float)
     parser.add_argument("--q_lr", default=0.001, type=float)

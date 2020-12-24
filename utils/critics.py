@@ -11,7 +11,7 @@ class AttentionCritic(nn.Module):
     observation and action, and can also attend over the other agents' encoded
     observations and actions.
     """
-    def __init__(self, sa_sizes, hidden_dim=128, norm_in=False, attend_heads=4):
+    def __init__(self, sa_sizes, hidden_dim=128, norm_in=False, attend_heads=4, linear_encode_in=False):
         """
         Inputs:
             sa_sizes (list of (int, int)): Size of state and action spaces per
@@ -39,8 +39,13 @@ class AttentionCritic(nn.Module):
             if norm_in:
                 encoder.add_module('enc_bn', nn.BatchNorm1d(idim,
                                                             affine=False))
-            encoder.add_module('enc_fc1', nn.LSTM(idim, hidden_dim, num_layers=1, batch_first=True))
-            # encoder.add_module('enc_nl', nn.LeakyReLU())
+            if linear_encode_in:
+                encoder.add_module('enc_fc0', nn.Linear(idim, hidden_dim))
+                encoder.add_module('enc_nl', nn.LeakyReLU())
+                encoder.add_module('enc_fc1', nn.LSTM(hidden_dim, hidden_dim, num_layers=1, batch_first=True))
+            else:
+                encoder.add_module('enc_fc1', nn.LSTM(idim, hidden_dim, num_layers=1, batch_first=True))
+
             self.critic_encoders.append(encoder)
             critic = nn.Sequential()
             critic.add_module('critic_fc1', nn.Linear(2 * hidden_dim,
@@ -53,8 +58,12 @@ class AttentionCritic(nn.Module):
             if norm_in:
                 state_encoder.add_module('s_enc_bn', nn.BatchNorm1d(
                                             sdim, affine=False))
-            state_encoder.add_module('s_enc_fc1', nn.LSTM(sdim, hidden_dim, num_layers=1, batch_first=True))
-            # state_encoder.add_module('s_enc_nl', nn.LeakyReLU())
+            if linear_encode_in:
+                state_encoder.add_module('s_enc_fc0', nn.Linear(sdim, hidden_dim))
+                state_encoder.add_module('s_enc_nl', nn.LeakyReLU())
+                state_encoder.add_module('s_enc_fc1', nn.LSTM(hidden_dim, hidden_dim, num_layers=1, batch_first=True))
+            else:
+                state_encoder.add_module('s_enc_fc1', nn.LSTM(sdim, hidden_dim, num_layers=1, batch_first=True))
             self.state_encoders.append(state_encoder)
 
         attend_dim = hidden_dim // attend_heads

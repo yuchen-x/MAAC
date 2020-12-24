@@ -18,7 +18,7 @@ class AttentionSAC(object):
                  reward_scale=10.,
                  pol_hidden_dim=128,
                  critic_hidden_dim=128, attend_heads=4,
-                 grad_clip_norm=0.5, state_critic=False,
+                 grad_clip_norm=0.5, critic_linear_encode_in=False,
                  **kwargs):
         """
         Inputs:
@@ -43,9 +43,9 @@ class AttentionSAC(object):
                                       **params)
                          for params in agent_init_params]
         self.critic = AttentionCritic(sa_size, hidden_dim=critic_hidden_dim,
-                                      attend_heads=attend_heads)
+                                      attend_heads=attend_heads, linear_encode_in=critic_linear_encode_in)
         self.target_critic = AttentionCritic(sa_size, hidden_dim=critic_hidden_dim,
-                                             attend_heads=attend_heads)
+                                             attend_heads=attend_heads, linear_encode_in=critic_linear_encode_in)
         hard_update(self.target_critic, self.critic)
         self.critic_optimizer = Adam(self.critic.parameters(), lr=q_lr,
                                      weight_decay=1e-3)
@@ -61,7 +61,6 @@ class AttentionSAC(object):
         self.trgt_critic_dev = 'cpu'  # device for target critics
         self.niter = 0
         self.grad_clip_norm = grad_clip_norm
-        self.state_critic = state_critic
 
     @property
     def policies(self):
@@ -101,12 +100,8 @@ class AttentionSAC(object):
             next_acs.append(curr_next_ac.view(ob.shape[0], ob.shape[1], -1))
             next_log_pis.append(curr_next_log_pi)
 
-        if self.state_critic:
-            trgt_critic_in = list(zip(next_state, next_acs))
-            critic_in = list(zip(state, acs))
-        else:
-            trgt_critic_in = list(zip(next_obs, next_acs))
-            critic_in = list(zip(obs, acs))
+        trgt_critic_in = list(zip(next_obs, next_acs))
+        critic_in = list(zip(obs, acs))
 
         next_qs = self.target_critic(trgt_critic_in)
         critic_rets = self.critic(critic_in, regularize=True,
@@ -157,10 +152,7 @@ class AttentionSAC(object):
             all_log_pis.append(log_pi)
             all_pol_regs.append(pol_regs)
 
-        if self.state_critic:
-            critic_in = list(zip(state, samp_acs))
-        else:
-            critic_in = list(zip(obs, samp_acs))
+        critic_in = list(zip(obs, samp_acs))
         critic_rets = self.critic(critic_in, return_all_q=True)
         for a_i, probs, log_pi, pol_regs, (q, all_q) in zip(range(self.nagents), all_probs,
                                                             all_log_pis, all_pol_regs,
@@ -257,7 +249,7 @@ class AttentionSAC(object):
                       pi_lr=0.01, q_lr=0.01,
                       reward_scale=10.,
                       pol_hidden_dim=128, critic_hidden_dim=128, attend_heads=4,
-                      state_critic=False,
+                      critic_linear_encode_in=False,
                       **kwargs):
         """
         Instantiate instance of this class from multi-agent environment
@@ -274,10 +266,7 @@ class AttentionSAC(object):
                               env.observation_space):
             agent_init_params.append({'num_in_pol': obsp.shape[0],
                                       'num_out_pol': acsp.n})
-            if state_critic:
-                sa_size.append((env_info['state_shape'], acsp.n))
-            else:
-                sa_size.append((obsp.shape[0], acsp.n))
+            sa_size.append((obsp.shape[0], acsp.n))
 
         init_dict = {'gamma': gamma, 'tau': tau,
                      'pi_lr': pi_lr, 'q_lr': q_lr,
@@ -287,7 +276,7 @@ class AttentionSAC(object):
                      'attend_heads': attend_heads,
                      'agent_init_params': agent_init_params,
                      'sa_size': sa_size,
-                     'state_critic': state_critic}
+                     'critic_linear_encode_in': critic_linear_encode_in}
         instance = cls(**init_dict)
         instance.init_dict = init_dict
         return instance
