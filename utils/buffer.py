@@ -162,13 +162,14 @@ class ReplayBufferEpi(object):
                                                    rollover, axis=0)
             self.curr_i = 0
             self.filled_i = self.max_episodes
+
+            self.state_buff[0][self.curr_i:self.curr_i+self.nentries] = 0.0
+            self.next_state_buff[0][self.curr_i:self.curr_i+self.nentries] = 0.0
             # refresh buffs
             for agent_i in range(self.num_agents):
-                self.state_buff[0][self.curr_i:self.curr_i+self.nentries] = 0.0
                 self.obs_buffs[agent_i][self.curr_i:self.curr_i+self.nentries] = 0.0
                 self.ac_buffs[agent_i][self.curr_i:self.curr_i+self.nentries] = 0.0
                 self.rew_buffs[agent_i][self.curr_i:self.curr_i+self.nentries] = 0.0
-                self.next_state_buff[0][self.curr_i:self.curr_i+self.nentries] = 0.0
                 self.next_obs_buffs[agent_i][self.curr_i:self.curr_i+self.nentries] = 0.0
                 self.done_buffs[agent_i][self.curr_i:self.curr_i+self.nentries] = 0.0
                 self.valid_buffs[agent_i][self.curr_i:self.curr_i+self.nentries] = 0.0
