@@ -134,7 +134,8 @@ def run(config):
                                        grad_clip_norm=config.grad_clip_norm,
                                        critic_linear_encode_in=config.critic_linear_encode_in)
 
-    replay_buffer = ReplayBufferEpi(config.buffer_length, 
+    replay_buffer = ReplayBufferEpi(config.n_rollout_threads,
+                                    config.buffer_length, 
                                     config.episode_length,
                                     model.nagents,
                                     [obsp.shape[0] for obsp in env.observation_space],
@@ -142,11 +143,16 @@ def run(config):
                                     for acsp in env.action_space],
                                     env_info['state_shape'])
 
-    t = 0
+    time_start = time.time()
     time_counter = time.time() 
-    test_returns = []
+    if config.resume:
+        t, ep_start, test_returns = load_ckpt(config.run_idx, replay_buffer, model, config.save_dir)
+    else:
+        t = 0
+        ep_start = 0
+        test_returns = []
 
-    for ep_i in range(0, config.n_episodes, config.n_rollout_threads):
+    for ep_i in range(ep_start, config.n_episodes, config.n_rollout_threads):
 
         if ep_i % (config.eval_freq - (config.eval_freq % config.n_rollout_threads)) == 0:
             test_return = evaluate(env_test, 
@@ -222,9 +228,13 @@ def run(config):
                     model.update_all_targets()
                 model.prep_rollouts(device='cpu')
 
-        if ep_i % config.save_rate == 0:
+        if ep_i % (config.save_rate - (config.save_rate % config.n_rollout_threads)) == 0:
             save_test_data(config.run_idx, test_returns, config.save_dir)
-            save_ckpt(config.run_idx, model, config.save_dir)
+
+        if (time.time() - time_start) // 3600 >= 23:
+            save_ckpt(config.run_idx, t, ep_i+config.n_rollout_threads, test_returns, replay_buffer, model, config.save_dir)
+            print('save')
+            break
 
         if logger is not None:
             ep_rews = replay_buffer.get_average_rewards(
@@ -241,7 +251,7 @@ def run(config):
 
     # model.save(run_dir / 'model.pt')
     save_test_data(config.run_idx, test_returns, config.save_dir)
-    save_ckpt(config.run_idx, model, config.save_dir)
+    save_ckpt(config.run_idx, t, ep_i+config.n_rollout_threads, test_returns, replay_buffer, model, config.save_dir)
     env.close()
     env_test.close()
     print("Finish entire training ... ", flush=True)
@@ -280,7 +290,30 @@ def save_test_data(run_idx, data, save_dir):
     with open("./performance/" + save_dir + "/test/test_perform" + str(run_idx) + ".pickle", 'wb') as handle:
         pickle.dump(data, handle)
 
-def save_ckpt(run_idx, model, save_dir, max_save=2):
+def save_ckpt(run_idx, steps, ep_i, test_returns, replay_buffer, model, save_dir, max_save=2):
+
+    PATH = "./performance/" + save_dir + "/ckpt/" + str(run_idx) + "_generic_" + "{}.tar"
+    for n in list(range(max_save-1, 0, -1)):
+        os.system('cp -rf ' + PATH.format(n) + ' ' + PATH.format(n+1) )
+    PATH = PATH.format(1)
+
+    torch.save({'t': steps,
+                'ep_i': ep_i,
+                'replay_buffer_state': replay_buffer.state_buff,
+                'replay_buffer_next_state': replay_buffer.next_state_buff,
+                'replay_buffer_obs': replay_buffer.obs_buffs,
+                'replay_buffer_ac': replay_buffer.ac_buffs,
+                'replay_buffer_rew': replay_buffer.rew_buffs,
+                'replay_buffer_next_obs': replay_buffer.next_obs_buffs,
+                'replay_buffer_done': replay_buffer.done_buffs,
+                'replay_buffer_valid': replay_buffer.valid_buffs,
+                'filled_i': replay_buffer.filled_i,
+                'curr_i': replay_buffer.curr_i,
+                'random_state': random.getstate(),
+                'np_random_state': np.random.get_state(),
+                'torch_random_state': torch.random.get_rng_state(),
+                'test_returns': test_returns},
+                PATH)
 
     PATH = "./performance/" + save_dir + "/ckpt/" + str(run_idx) + "_critic_" + "{}.tar"
     for n in list(range(max_save-1, 0, -1)):
@@ -303,7 +336,28 @@ def save_ckpt(run_idx, model, save_dir, max_save=2):
                     'actor_optimizer_state_dict': agent.policy_optimizer.state_dict()},
                    PATH)
 
-def load_ckpt(run_idx, model, save_dir):
+def load_ckpt(run_idx, replay_buffer, model, save_dir):
+    PATH = "./performance/" + save_dir + "/ckpt/" + str(run_idx) + "_generic_" + "1.tar"
+    ckpt = torch.load(PATH)
+    ep_i = ckpt['ep_i']
+    t = ckpt['t']
+    test_returns = ckpt['test_returns']
+    random.setstate(ckpt['random_state'])
+    np.random.set_state(ckpt['np_random_state'])
+    torch.set_rng_state(ckpt['torch_random_state'])
+
+    replay_buffer.curr_i = ckpt['curr_i']
+    replay_buffer.filled_i = ckpt['filled_i']
+    replay_buffer.state_buff = ckpt['replay_buffer_state']
+    replay_buffer.next_state_buff = ckpt['replay_buffer_next_state']
+    replay_buffer.obs_buffs = ckpt['replay_buffer_obs']
+    replay_buffer.ac_buffs = ckpt['replay_buffer_ac']
+    replay_buffer.rew_buffs = ckpt['replay_buffer_rew']
+    replay_buffer.next_obs_buffs = ckpt['replay_buffer_next_obs']
+    replay_buffer.done_buffs = ckpt['replay_buffer_done']
+    replay_buffer.valid_buffs = ckpt['replay_buffer_valid']
+    replay_buffer.flush()
+
     PATH = "./performance/" + save_dir + "/ckpt/" + str(run_idx) + "_critic_" + "1.tar"
     ckpt = torch.load(PATH)
     model.critic.load_state_dict(ckpt['critic_net_state_dict'])
@@ -316,6 +370,8 @@ def load_ckpt(run_idx, model, save_dir):
         agent.policy.load_state_dict(ckpt['actor_net_state_dict'])
         agent.target_policy.load_state_dict(ckpt['actor_tgt_net_state_dict'])
         agent.policy_optimizer.load_state_dict(ckpt['actor_optimizer_state_dict'])
+
+    return t, ep_i, test_returns
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -373,6 +429,7 @@ if __name__ == '__main__':
     parser.add_argument("--save_dir", default='test', type=str)
     parser.add_argument("--save_rate", default=1000, type=int)
     parser.add_argument("--logger", action='store_true')
+    parser.add_argument("--resume", action='store_true')
 
     config = parser.parse_args()
 
