@@ -100,7 +100,7 @@ class ReplayBufferEpi(object):
     """
     Replay Buffer for multi-agent RL with parallel rollouts
     """
-    def __init__(self, max_episodes, epi_len, num_agents, obs_dims, ac_dims, s_dim):
+    def __init__(self, nentries, max_episodes, epi_len, num_agents, obs_dims, ac_dims, s_dim):
         """
         Inputs:
             max_episodes (int): Maximum number of episodes to store in buffer
@@ -136,12 +136,12 @@ class ReplayBufferEpi(object):
         self.filled_i = 0  # index of first empty location in buffer (last index when full)
         self.curr_i = 0  # current epi index to write to (ovewrite oldest data)
         self.curr_exp_i = 0 # current exp index to write to (overite oldest data) 
+        self.nentries = nentries  # handle multiple parallel environments
 
     def __len__(self):
         return self.filled_i
 
     def push(self, state, observations, actions, rewards, next_state, next_observations, dones, valids, all_epis_done=False):
-        self.nentries = observations.shape[0]  # handle multiple parallel environments
         if self.curr_i + self.nentries > self.max_episodes:
             rollover = self.max_episodes - self.curr_i # num of indices to roll over
 
@@ -162,17 +162,7 @@ class ReplayBufferEpi(object):
                                                    rollover, axis=0)
             self.curr_i = 0
             self.filled_i = self.max_episodes
-
-            self.state_buff[0][self.curr_i:self.curr_i+self.nentries] = 0.0
-            self.next_state_buff[0][self.curr_i:self.curr_i+self.nentries] = 0.0
-            # refresh buffs
-            for agent_i in range(self.num_agents):
-                self.obs_buffs[agent_i][self.curr_i:self.curr_i+self.nentries] = 0.0
-                self.ac_buffs[agent_i][self.curr_i:self.curr_i+self.nentries] = 0.0
-                self.rew_buffs[agent_i][self.curr_i:self.curr_i+self.nentries] = 0.0
-                self.next_obs_buffs[agent_i][self.curr_i:self.curr_i+self.nentries] = 0.0
-                self.done_buffs[agent_i][self.curr_i:self.curr_i+self.nentries] = 0.0
-                self.valid_buffs[agent_i][self.curr_i:self.curr_i+self.nentries] = 0.0
+            self.flush()
 
         self.state_buff[0][self.curr_i:self.curr_i + self.nentries][:, self.curr_exp_i] \
                 = np.vstack(state)
@@ -204,16 +194,7 @@ class ReplayBufferEpi(object):
             if self.curr_i == self.max_episodes:
                 self.curr_i = 0
 
-            self.state_buff[0][self.curr_i:self.curr_i+self.nentries] = 0.0
-            self.next_state_buff[0][self.curr_i:self.curr_i+self.nentries] = 0.0
-            # refresh done_buff and valid_buff
-            for agent_i in range(self.num_agents):
-                self.obs_buffs[agent_i][self.curr_i:self.curr_i+self.nentries] = 0.0
-                self.ac_buffs[agent_i][self.curr_i:self.curr_i+self.nentries] = 0.0
-                self.rew_buffs[agent_i][self.curr_i:self.curr_i+self.nentries] = 0.0
-                self.next_obs_buffs[agent_i][self.curr_i:self.curr_i+self.nentries] = 0.0
-                self.done_buffs[agent_i][self.curr_i:self.curr_i+self.nentries] = 0.0
-                self.valid_buffs[agent_i][self.curr_i:self.curr_i+self.nentries] = 0.0
+            self.flush()
 
     def sample(self, N, to_gpu=False, norm_rews=False):
         if self.filled_i < self.max_episodes:
@@ -252,3 +233,15 @@ class ReplayBufferEpi(object):
         else:
             inds = np.arange(max(0, self.curr_i - N), self.curr_i)
         return [self.rew_buffs[i][inds].sum(1).mean() for i in range(self.num_agents)]
+
+    def flush(self):
+        self.state_buff[0][self.curr_i:self.curr_i+self.nentries] = 0.0
+        self.next_state_buff[0][self.curr_i:self.curr_i+self.nentries] = 0.0
+        # refresh done_buff and valid_buff
+        for agent_i in range(self.num_agents):
+            self.obs_buffs[agent_i][self.curr_i:self.curr_i+self.nentries] = 0.0
+            self.ac_buffs[agent_i][self.curr_i:self.curr_i+self.nentries] = 0.0
+            self.rew_buffs[agent_i][self.curr_i:self.curr_i+self.nentries] = 0.0
+            self.next_obs_buffs[agent_i][self.curr_i:self.curr_i+self.nentries] = 0.0
+            self.done_buffs[agent_i][self.curr_i:self.curr_i+self.nentries] = 0.0
+            self.valid_buffs[agent_i][self.curr_i:self.curr_i+self.nentries] = 0.0
