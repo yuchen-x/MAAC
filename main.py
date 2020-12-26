@@ -64,23 +64,23 @@ def make_test_env(config, env_args, seed):
     return DummyVecEnv([get_env_fn(0)])
 
 def run(config):
-    model_dir = Path('./models') / config.env_id / config.model_name
-    if not model_dir.exists():
-        run_num = 1
-    else:
-        exst_run_nums = [int(str(folder.name).split('run')[1]) for folder in
-                         model_dir.iterdir() if
-                         str(folder.name).startswith('run')]
-        if len(exst_run_nums) == 0:
+    if config.logger:
+        model_dir = Path('./models') / config.env_id / config.model_name
+        if not model_dir.exists():
             run_num = 1
         else:
-            run_num = max(exst_run_nums) + 1
+            exst_run_nums = [int(str(folder.name).split('run')[1]) for folder in
+                             model_dir.iterdir() if
+                             str(folder.name).startswith('run')]
+            if len(exst_run_nums) == 0:
+                run_num = 1
+            else:
+                run_num = max(exst_run_nums) + 1
 
-    curr_run = 'run%i' % run_num
-    run_dir = model_dir / curr_run
-    log_dir = run_dir / 'logs'
-    os.makedirs(log_dir)
-    if config.logger:
+        curr_run = 'run%i' % run_num
+        run_dir = model_dir / curr_run
+        log_dir = run_dir / 'logs'
+        os.makedirs(log_dir)
         logger = SummaryWriter(str(log_dir))
     else:
         logger = None
@@ -255,8 +255,9 @@ def run(config):
     env.close()
     env_test.close()
     print("Finish entire training ... ", flush=True)
-    logger.export_scalars_to_json(str(log_dir / 'summary.json'))
-    logger.close()
+    if config.logger:
+        logger.export_scalars_to_json(str(log_dir / 'summary.json'))
+        logger.close()
 
 def evaluate(env, model, gamma, episode_length, eval_num_epi=10):
     for agent in model.agents:
