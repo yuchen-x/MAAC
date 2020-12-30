@@ -118,6 +118,7 @@ class AttentionSAC(object):
             target_q = rews[a_i].view(-1, 1) + self.gamma * nq * (1 - dones[a_i].view(-1, 1))
             if soft:
                 target_q -= log_pi / self.reward_scale
+            assert valids[a_i].view(-1,1).shape == pq.shape, "dim mismatch"
             q_loss += (valids[a_i].view(-1, 1) * (pq - target_q.detach()) ** 2).sum() / valids[a_i].sum()
             for reg in regs:
                 q_loss += reg  # regularizing attention
@@ -170,6 +171,7 @@ class AttentionSAC(object):
             pol_target = q - v
             if soft:
                 # pol_loss = (valids[a_i].view(-1,1) * log_pi * (log_pi / self.reward_scale - pol_target).detach()).mean()
+                assert valids[a_i].view(-1,1).shape == log_pi.shape, "dim mismatch"
                 pol_loss = (valids[a_i].view(-1,1) * log_pi * (log_pi / self.reward_scale - pol_target).detach()).sum() / valids[a_i].sum()
             else:
                 assert False
