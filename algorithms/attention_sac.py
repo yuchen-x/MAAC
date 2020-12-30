@@ -170,7 +170,7 @@ class AttentionSAC(object):
             pol_target = q - v
             if soft:
                 # pol_loss = (valids[a_i].view(-1,1) * log_pi * (log_pi / self.reward_scale - pol_target).detach()).mean()
-                pol_loss_ = (valids[a_i].view(-1,1) * log_pi * (log_pi / self.reward_scale - pol_target).detach()).sum() / valids[a_i].sum()
+                pol_loss = (valids[a_i].view(-1,1) * log_pi * (log_pi / self.reward_scale - pol_target).detach()).sum() / valids[a_i].sum()
             else:
                 assert False
                 pol_loss = (log_pi * (-pol_target).detach()).mean()
