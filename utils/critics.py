@@ -87,7 +87,8 @@ class AttentionCritic(nn.Module):
             p.grad.data.mul_(1. / self.nagents)
 
     def forward(self, inps, agents=None, return_q=True, return_all_q=False,
-                regularize=False, return_attend=False, logger=None, niter=0):
+                regularize=False, return_attend=False, logger=None, niter=0,
+                valids=None):
         """
         Inputs:
             inps (list of PyTorch Matrices): Inputs to each agents' encoder
@@ -146,11 +147,12 @@ class AttentionCritic(nn.Module):
         all_rets = []
         for i, a_i in enumerate(agents):
             if agents.stop > 2:
-                head_entropies = [(-((probs + 1e-8).log() * probs).squeeze().sum(1)
-                                   .mean()) for probs in all_attend_probs[i]]
+                head_entropies = [(-(((probs + 1e-8).log() * probs).squeeze(1).sum(1, keepdim=True) * valids[i].view(-1,1)).sum() 
+                                    / valids[i].sum()) for probs in all_attend_probs[i]]
+
             else:
-                head_entropies = [(-((probs + 1e-8).log() * probs).squeeze().sum()
-                                   .mean()) for probs in all_attend_probs[i]]
+                head_entropies = [(-(((probs + 1e-8).log() * probs).squeeze(1) * valids[i].view(-1,1)).sum()
+                                    / valids[i].sum()) for probs in all_attend_probs[i]]
             agent_rets = []
             critic_in = torch.cat((s_encodings[i], *other_all_values[i]), dim=1)
             all_q = self.critics[a_i](critic_in)
@@ -160,9 +162,10 @@ class AttentionCritic(nn.Module):
                 agent_rets.append(q)
             if return_all_q:
                 agent_rets.append(all_q)
+
             if regularize:
                 # regularize magnitude of attention logits
-                attend_mag_reg = 1e-3 * sum((logit**2).mean() for logit in
+                attend_mag_reg = 1e-3 * sum(((logit**2).squeeze(1).mean(1, keepdim=True)*valids[i].view(-1,1)).sum() / valids[i].sum() for logit in
                                             all_attend_logits[i])
                 regs = (attend_mag_reg,)
                 agent_rets.append(regs)

@@ -108,17 +108,17 @@ class AttentionSAC(object):
             trgt_critic_in = list(zip(next_obs, next_acs))
             critic_in = list(zip(obs, acs))
 
-        next_qs = self.target_critic(trgt_critic_in)
+        next_qs = self.target_critic(trgt_critic_in, valids=valids)
         critic_rets = self.critic(critic_in, regularize=True,
-                                  logger=logger, niter=self.niter)
+                                  logger=logger, niter=self.niter, valids=valids)
         q_loss = 0
         for a_i, nq, log_pi, (pq, regs) in zip(range(self.nagents), next_qs,
                                                next_log_pis, critic_rets):
 
-            target_q = valids[a_i].view(-1,1) * (rews[a_i].view(-1, 1) + self.gamma * nq * (1 - dones[a_i].view(-1, 1)))
+            target_q = rews[a_i].view(-1, 1) + self.gamma * nq * (1 - dones[a_i].view(-1, 1))
             if soft:
                 target_q -= log_pi / self.reward_scale
-            q_loss += MSELoss(pq, target_q.detach())
+            q_loss += (valids[a_i].view(-1, 1) * (pq - target_q.detach()) ** 2).sum() / valids[a_i].sum()
             for reg in regs:
                 q_loss += reg  # regularizing attention
 
@@ -147,7 +147,7 @@ class AttentionSAC(object):
         for a_i, pi, ob in zip(range(self.nagents), self.policies, obs):
             returns, _ = pi(
                 ob, return_all_probs=True, return_log_pi=True,
-                regularize=True, return_entropy=True)
+                regularize=True, return_entropy=True, valid=valids[a_i])
             curr_ac, probs, log_pi, pol_regs, ent = returns
             if logger is not None:
                 logger.add_scalar('agent%i/policy_entropy' % a_i, ent,
@@ -161,7 +161,7 @@ class AttentionSAC(object):
             critic_in = list(zip(state, samp_acs))
         else:
             critic_in = list(zip(obs, samp_acs))
-        critic_rets = self.critic(critic_in, return_all_q=True)
+        critic_rets = self.critic(critic_in, return_all_q=True, valids=valids)
         for a_i, probs, log_pi, pol_regs, (q, all_q) in zip(range(self.nagents), all_probs,
                                                             all_log_pis, all_pol_regs,
                                                             critic_rets):
@@ -169,8 +169,10 @@ class AttentionSAC(object):
             v = (all_q * probs).sum(dim=1, keepdim=True)
             pol_target = q - v
             if soft:
-                pol_loss = (valids[a_i].view(-1,1) * log_pi * (log_pi / self.reward_scale - pol_target).detach()).mean()
+                # pol_loss = (valids[a_i].view(-1,1) * log_pi * (log_pi / self.reward_scale - pol_target).detach()).mean()
+                pol_loss_ = (valids[a_i].view(-1,1) * log_pi * (log_pi / self.reward_scale - pol_target).detach()).sum() / valids[a_i].sum()
             else:
+                assert False
                 pol_loss = (log_pi * (-pol_target).detach()).mean()
             for reg in pol_regs:
                 pol_loss += 1e-3 * reg  # policy regularization

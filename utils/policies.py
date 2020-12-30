@@ -58,7 +58,7 @@ class DiscretePolicy(BasePolicy):
 
     def forward(self, obs, H=None, sample=True, return_all_probs=False,
                 return_log_pi=False, regularize=False,
-                return_entropy=False):
+                return_entropy=False, valid=None):
         out, H = super(DiscretePolicy, self).forward(obs, H)
         out = out.reshape(-1, out.shape[-1])
         probs = F.softmax(out, dim=1)
@@ -76,9 +76,11 @@ class DiscretePolicy(BasePolicy):
             # return log probability of selected action
             rets.append(log_probs.gather(1, int_act))
         if regularize:
-            rets.append([(out**2).mean()])
+            # rets.append([(out**2).mean()])
+            rets.append([((out**2).mean(-1, keepdim=True) * valid.view(-1,1)).sum() / valid.sum()])
         if return_entropy:
-            rets.append(-(log_probs * probs).sum(1).mean())
+            # rets.append(-(log_probs * probs).sum(1).mean())
+            rets.append(((-(log_probs * probs).sum(1, keepdim=True))*valid.view(-1,1)).sum() / valid.sum())
         if len(rets) == 1:
             return rets[0], H
         return rets, H
