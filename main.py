@@ -84,6 +84,7 @@ def run(config):
     torch.manual_seed(config.seed)
     np.random.seed(config.seed)
     random.seed(config.seed)
+    torch.set_num_threads(1)
 
     if config.env_id.startswith('CT'):
         env_args = {'terminate_step': config.episode_length,
