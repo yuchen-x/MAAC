@@ -63,23 +63,24 @@ def make_test_env(config, env_args, seed):
     return DummyVecEnv([get_env_fn(0)])
 
 def run(config):
-    model_dir = Path('./models') / config.env_id / config.model_name
-    if not model_dir.exists():
-        run_num = 1
-    else:
-        exst_run_nums = [int(str(folder.name).split('run')[1]) for folder in
-                         model_dir.iterdir() if
-                         str(folder.name).startswith('run')]
-        if len(exst_run_nums) == 0:
-            run_num = 1
-        else:
-            run_num = max(exst_run_nums) + 1
+    # model_dir = Path('./models') / config.env_id / config.model_name
+    # if not model_dir.exists():
+    #     run_num = 1
+    # else:
+    #     exst_run_nums = [int(str(folder.name).split('run')[1]) for folder in
+    #                      model_dir.iterdir() if
+    #                      str(folder.name).startswith('run')]
+    #     if len(exst_run_nums) == 0:
+    #         run_num = 1
+    #     else:
+    #         run_num = max(exst_run_nums) + 1
 
-    curr_run = 'run%i' % run_num
-    run_dir = model_dir / curr_run
-    log_dir = run_dir / 'logs'
-    os.makedirs(log_dir)
-    logger = SummaryWriter(str(log_dir))
+    # curr_run = 'run%i' % run_num
+    # run_dir = model_dir / curr_run
+    # log_dir = run_dir / 'logs'
+    # os.makedirs(log_dir)
+    # logger = SummaryWriter(str(log_dir))
+    logger = None
 
     torch.manual_seed(config.seed)
     np.random.seed(config.seed)
@@ -187,9 +188,9 @@ def run(config):
 
         ep_rews = replay_buffer.get_average_rewards(
             config.episode_length * config.n_rollout_threads)
-        for a_i, a_ep_rew in enumerate(ep_rews):
-            logger.add_scalar('agent%i/mean_episode_rewards' % a_i,
-                              a_ep_rew * config.episode_length, ep_i)
+        # for a_i, a_ep_rew in enumerate(ep_rews):
+        #     logger.add_scalar('agent%i/mean_episode_rewards' % a_i,
+        #                       a_ep_rew * config.episode_length, ep_i)
 
         # if ep_i % config.save_interval < config.n_rollout_threads:
         #     model.prep_rollouts(device='cpu')
@@ -197,14 +198,14 @@ def run(config):
         #     model.save(run_dir / 'incremental' / ('model_ep%i.pt' % (ep_i + 1)))
         #     model.save(run_dir / 'model.pt')
 
-    model.save(run_dir / 'model.pt')
+    # model.save(run_dir / 'model.pt')
     save_test_data(config.run_idx, test_returns, config.save_dir)
     save_ckpt(config.run_idx, model, config.save_dir)
     env.close()
     env_test.close()
     print("Finish entire training ... ", flush=True)
-    logger.export_scalars_to_json(str(log_dir / 'summary.json'))
-    logger.close()
+    # logger.export_scalars_to_json(str(log_dir / 'summary.json'))
+    # logger.close()
 
 def evaluate(env, model, gamma, episode_length, eval_num_epi=10):
     for agent in model.agents:
